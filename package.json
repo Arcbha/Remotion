@@ -1,0 +1,23 @@
+{
+  "name": "overthink-motion",
+  "version": "1.0.0",
+  "description": "Apple-España-inspired kinetic typography — 6s motion graphics built with Remotion",
+  "license": "MIT",
+  "scripts": {
+    "start": "remotion studio",
+    "build": "remotion render Overthink out/overthink.mp4",
+    "still": "remotion still Overthink out/still.png",
+    "upgrade": "remotion upgrade"
+  },
+  "dependencies": {
+    "@fontsource/inter": "^5.1.0",
+    "@remotion/cli": "4.0.379",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "remotion": "4.0.379"
+  },
+  "devDependencies": {
+    "@types/react": "19.0.0",
+    "typescript": "5.8.3"
+  }
+}
