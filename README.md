@@ -1,58 +1,41 @@
-# Overthink — kinetic typography
+# Overthink — "The Takeover"
 
-A 6-second **9:16 (1080×1920)** motion-graphics piece built with
+A 6-second **9:16 (1080×1920)** kinetic-typography piece built with
 [Remotion](https://remotion.dev), styled after the **Apple (España)** design
-language: a cathedral of white space where oversized weight-700 Inter type
-rises out of the paper one word at a time — then gets shoved to the back of the
-mind as the thesis takes over.
+language: a minimalist white void where a typewriter turns on itself — two
+lines type out, then the thesis violently takes over.
 
-> "…overthink long enough, and the negative thoughts starts defining you."
+> "...overthink long enough, and the negative thoughts starts defining you."
 
 ## The design language
 
 Distilled from `DESIGN.md` into `src/theme.ts`:
 
-- **Near-monochrome palette** — ink `#1d1d1f` on paper `#ffffff`, with the gray
-  band `#f5f5f7` used for rhythm instead of dividers.
-- **A single chromatic moment** — the "primary ink" gradient (dark ink fading
-  through electric blue) is spent only on the final phrase
-  **"starts defining you."**, the one place color is allowed to touch the type.
-- **Oversized display type** — Inter 700 at 96px with `-1.44px` tracking, the
-  DESIGN.md-specified substitute for SF Pro Display.
+- **Absolute minimalism** — ink `#1d1d1f` on pure paper `#ffffff`. Zero UI
+  chrome: no eyebrows, no pagination dots, extreme white space.
+- **A single chromatic moment** — the "primary ink" gradient
+  `linear-gradient(184deg, #1d1d1f 20%, #0000f9 76%, #252525 95%)` is spent
+  only on the final phrase **"starts defining you."**
+- **Oversized display type** — Inter 700 at 96px, line-height 1.04, `-1.44px`
+  tracking (the DESIGN.md substitute for SF Pro Display), self-hosted via
+  `@fontsource/inter` so renders need no network.
 
-## Structure — two phases
+## Structure — four phases (180 frames @ 30fps)
 
-**Phase 1 · The Setup** — Lines 1 & 2 are anchored to the top third and reveal
-word by word with the signature Apple reveal: each word lifts on the Y-axis and
-eases from a heavy blur into sharp focus, opacity 0→1
-(`src/components/RevealWord.tsx`). Nothing scales, nothing casts a shadow.
+| Phase | Frames | What happens |
+|-------|--------|--------------|
+| **1 · The Void** | 0–15 | Pure white. A heavy black text cursor blinks dead-center. No text. |
+| **2 · Mental Friction** | 15–75 | A strict typewriter (`useCurrentFrame` → string length, no blur). Line 1 types at a mechanical pace; line 2 follows *slower*. The cursor trails the text. |
+| **3 · The Hold** | 75–105 | Typing stops. The two lines sit centered; the cursor keeps blinking. |
+| **4 · The Takeover** | 105–180 | At frame 105: the cursor is **killed** instantly (zero fade); lines 1 & 2 are shoved to the back of the mind (stiff spring → `scale 0.8`, `opacity 15%`); and "starts defining you." **slams** in from `scale 1.5` on a high-damping spring while the primary-ink gradient **sweeps** its blue across the words (`background-clip: text` + animated `background-position`), settling blue-dominant. |
 
-**Phase 2 · The Takeover** (frame 108) — As line 3 fires:
-
-- *The exit* — lines 1 & 2 recede to the back of the mind: scaling to `0.85`,
-  blur pushed to `12px`, opacity dropped to `15%`.
-- *The impact* — "starts defining you." skips the gentle reveal entirely. It
-  enters dead-center at `scale: 1.5` and, on a stiff high-damping spring, snaps
-  rapidly down to `scale: 1`.
-- *The color* — the chromatic blue gradient is fully saturated from the very
-  first frame it appears, dominating the white space.
-
-## Animation timeline (180 frames @ 30fps)
-
-| Beat | Frames | What happens |
-|------|--------|--------------|
-| Setup | 8–30 | "…overthink long enough," reveals word by word |
-| The turn | 50–74 | "and the negative thoughts" — canvas eases into gray |
-| The takeover | 108–130 | setup lines recede; "starts defining you." snaps in |
-| Settle | 130–180 | the blue thesis holds, the old thoughts ghosted behind |
+The whole composition lives in a single full-screen centered flex column, so
+every line stays dead-center horizontally and vertically regardless of length.
 
 ## Run it
 
 ```bash
 npm install
 npm start            # open Remotion Studio
-npm run build        # render out/overthink.mp4
-npm run still        # render a hero still
+npm run build        # render out/overthink-takeover.mp4
 ```
-
-Fonts are self-hosted via `@fontsource/inter` (no network needed at render time).

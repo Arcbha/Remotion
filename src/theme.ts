@@ -24,7 +24,7 @@ export const colors = {
  * allowed to bleed into the typography (mirrors the hero product gradient).
  */
 export const inkGradient =
-  "linear-gradient(184deg, #1d1d1f 18%, #0000f9 74%, #252525 96%)";
+  "linear-gradient(184deg, #1d1d1f 20%, #0000f9 76%, #252525 95%)";
 
 export const fonts = {
   // Inter is the DESIGN.md-specified substitute for SF Pro Display / Text.
