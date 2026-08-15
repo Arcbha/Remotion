@@ -128,9 +128,13 @@ export const Overthink: React.FC = () => {
           willChange: "transform, opacity",
         }}
       >
+        {/* The full block is always laid out so line 1 never moves — the
+            untyped remainder is transparent but still reserves its space, and
+            characters simply fill in below as they are "typed". */}
         <div style={textBlock}>
-          {SETUP.slice(0, typed)}
+          <span>{SETUP.slice(0, typed)}</span>
           <Cursor visible={cursorAlive} />
+          <span style={{ color: "transparent" }}>{SETUP.slice(typed)}</span>
         </div>
       </div>
 
