@@ -10,12 +10,12 @@ import { colors } from "../theme";
 export const Background: React.FC = () => {
   const frame = useCurrentFrame();
 
-  // Two calm crossfades: settle into gray as "negative thoughts" lands,
-  // then a whisper back toward paper for the final line's clarity.
+  // The canvas eases into the quiet gray exactly as the setup lines recede,
+  // deepening the white space the impact phrase then dominates.
   const grayMix = interpolate(
     frame,
-    [70, 118, 150, 178],
-    [0, 1, 1, 0.55],
+    [78, 118, 180],
+    [0, 0.7, 0.7],
     { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
   );
 

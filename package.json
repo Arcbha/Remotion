@@ -5,7 +5,7 @@
   "license": "MIT",
   "scripts": {
     "start": "remotion studio",
-    "build": "remotion render Overthink out/overthink.mp4",
+    "build": "remotion render Overthink out/overthink-vertical.mp4",
     "still": "remotion still Overthink out/still.png",
     "upgrade": "remotion upgrade"
   },

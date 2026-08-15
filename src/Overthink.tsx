@@ -2,6 +2,7 @@ import React from "react";
 import {
   AbsoluteFill,
   interpolate,
+  spring,
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
@@ -9,141 +10,164 @@ import "@fontsource/inter/500.css";
 import "@fontsource/inter/600.css";
 import "@fontsource/inter/700.css";
 import { Background } from "./components/Background";
-import { Eyebrow, Pagination } from "./components/Chrome";
 import { RevealWord } from "./components/RevealWord";
-import { colors, fonts, tracking } from "./theme";
+import { fonts, inkGradient, tracking } from "./theme";
 
 const fontFamily = fonts.display;
+
+/** The frame at which line 3 takes over and lines 1 & 2 are pushed back. */
+const TAKEOVER = 108;
 
 /**
  * "...overthink long enough, and the negative thoughts starts defining you."
  *
- * A cathedral of white space: three lines of weight-700 Inter rise out of the
- * paper one word at a time, the canvas eases into gray as the thought darkens,
- * and the single chromatic-blue moment is spent on "defining you." — the one
- * place color is allowed to touch the type.
+ * Two phases in a 9:16 cathedral of white space:
+ *   1. Setup — lines 1 & 2 reveal word by word, anchored to the top third.
+ *   2. Takeover — as line 3 fires, the setup lines recede into a soft blur at
+ *      the back of the mind, and "starts defining you." snaps in dead-center
+ *      from scale 1.5, fully saturated in the chromatic blue from the first
+ *      frame, dominating the white.
  */
 export const Overthink: React.FC = () => {
   const frame = useCurrentFrame();
-  const { durationInFrames } = useVideoConfig();
-
-  // Barely-there rise of the whole stack — keeps the type "floating".
-  const drift = interpolate(frame, [0, durationInFrames], [8, -8]);
-
-  // A soft settle-in and a gentle fade-to-white on the last beat.
-  const outro = interpolate(
-    frame,
-    [durationInFrames - 12, durationInFrames],
-    [1, 0.86],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
-  );
+  const { fps } = useVideoConfig();
 
   const lineHeight = 1.06;
 
-  // Shared props for every headline word — one display size, one tracking.
+  // Shared props for every setup word — one display size, one tracking.
   const word = {
     fontSize: 96,
     tracking: tracking.display,
     lineHeight,
   } as const;
 
-  // Each line is a centered flex row so inter-word spacing is explicit and
-  // never collapses, while words still wrap gracefully.
+  // Each line is a centered flex row so inter-word spacing never collapses.
   const lineStyle: React.CSSProperties = {
     display: "flex",
     flexWrap: "wrap",
     justifyContent: "center",
     alignItems: "baseline",
-    columnGap: 30,
+    columnGap: 28,
     rowGap: 0,
-    marginBottom: 4,
+    marginBottom: 8,
   };
+
+  // --- Phase 2: the setup lines recede to the back of the mind ---------------
+  const recedeScale = interpolate(frame, [TAKEOVER, TAKEOVER + 18], [1, 0.85], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  const recedeBlur = interpolate(frame, [TAKEOVER, TAKEOVER + 18], [0, 12], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  const recedeOpacity = interpolate(
+    frame,
+    [TAKEOVER, TAKEOVER + 18],
+    [1, 0.15],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+  );
+
+  // A whisper of upward drift on the setup block during phase 1.
+  const setupDrift = interpolate(frame, [0, TAKEOVER], [10, 0], {
+    extrapolateRight: "clamp",
+  });
+
+  // --- Phase 2: the impact phrase snaps in -----------------------------------
+  // A stiff, high-damping spring: rapid arrival, no lingering bounce.
+  const impact = spring({
+    frame: frame - TAKEOVER,
+    fps,
+    config: { damping: 26, stiffness: 200, mass: 0.7 },
+    durationInFrames: 22,
+  });
+  const impactScale = interpolate(impact, [0, 1], [1.5, 1]);
+  // Fully saturated the millisecond it hits — a 2-frame cut, not a reveal.
+  const impactOpacity = interpolate(
+    frame,
+    [TAKEOVER, TAKEOVER + 2],
+    [0, 1],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+  );
 
   return (
     <AbsoluteFill style={{ fontFamily }}>
       <Background />
 
+      {/* Phase 1 — setup lines anchored to the top third, then receding */}
       <AbsoluteFill
         style={{
-          justifyContent: "center",
+          justifyContent: "flex-start",
           alignItems: "center",
-          padding: "0 120px",
+          paddingTop: 300,
+          paddingLeft: 70,
+          paddingRight: 70,
         }}
       >
         <div
           style={{
-            transform: `translateY(${drift}px)`,
-            opacity: outro,
             textAlign: "center",
-            maxWidth: 1400,
+            transform: `translateY(${setupDrift}px) scale(${recedeScale})`,
+            filter: `blur(${recedeBlur}px)`,
+            opacity: recedeOpacity,
+            willChange: "transform, filter, opacity",
           }}
         >
-          <Eyebrow text="A thought" delay={4} />
-
           {/* Line 1 — the setup */}
           <div style={lineStyle}>
-            <RevealWord delay={12} {...word}>
+            <RevealWord delay={8} {...word}>
               …overthink
             </RevealWord>
-            <RevealWord delay={24} {...word}>
+            <RevealWord delay={20} {...word}>
               long
             </RevealWord>
-            <RevealWord delay={34} {...word}>
+            <RevealWord delay={30} {...word}>
               enough,
             </RevealWord>
           </div>
 
           {/* Line 2 — the turn */}
           <div style={lineStyle}>
-            <RevealWord delay={60} {...word}>
+            <RevealWord delay={50} {...word}>
               and the
             </RevealWord>
-            <RevealWord delay={72} {...word}>
+            <RevealWord delay={62} {...word}>
               negative
             </RevealWord>
-            <RevealWord delay={84} {...word}>
+            <RevealWord delay={74} {...word}>
               thoughts
-            </RevealWord>
-          </div>
-
-          {/* Line 3 — the thesis; the single chromatic moment */}
-          <div style={lineStyle}>
-            <RevealWord delay={116} {...word}>
-              starts
-            </RevealWord>
-            <RevealWord delay={132} {...word} emphasis>
-              defining you.
             </RevealWord>
           </div>
         </div>
       </AbsoluteFill>
 
-      {/* Apple-system chrome: pagination dots pinned low, stepping per line */}
+      {/* Phase 2 — the impact phrase, dead-center, chromatic, snapping in */}
       <AbsoluteFill
         style={{
-          justifyContent: "flex-end",
+          justifyContent: "center",
           alignItems: "center",
-          paddingBottom: 72,
+          padding: "0 60px",
         }}
-      >
-        <Pagination count={3} activeStops={[12, 60, 116]} />
-      </AbsoluteFill>
-
-      {/* A single hairline at the very foot — a whisper of the Apple grid */}
-      <AbsoluteFill
-        style={{ justifyContent: "flex-end", alignItems: "stretch" }}
       >
         <div
           style={{
-            height: 1,
-            margin: "0 120px 40px",
-            backgroundColor: colors.hairline,
-            opacity: interpolate(frame, [24, 48], [0, 1], {
-              extrapolateLeft: "clamp",
-              extrapolateRight: "clamp",
-            }),
+            textAlign: "center",
+            fontWeight: 700,
+            fontSize: 96,
+            lineHeight,
+            letterSpacing: tracking.display,
+            backgroundImage: inkGradient,
+            WebkitBackgroundClip: "text",
+            backgroundClip: "text",
+            color: "transparent",
+            WebkitTextFillColor: "transparent",
+            transform: `scale(${impactScale})`,
+            opacity: impactOpacity,
+            willChange: "transform, opacity",
           }}
-        />
+        >
+          starts defining you.
+        </div>
       </AbsoluteFill>
     </AbsoluteFill>
   );
