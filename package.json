@@ -6,6 +6,7 @@
   "scripts": {
     "start": "remotion studio",
     "build": "remotion render Overthink out/overthink-takeover.mp4",
+    "build:defining": "remotion render StartsDefining out/starts-defining.mp4",
     "still": "remotion still Overthink out/still.png",
     "upgrade": "remotion upgrade"
   },

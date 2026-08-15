@@ -42,10 +42,29 @@ mass 0.7`), so the background pushback reads as a direct physical reaction to
 the impact rather than an independent animation. The `scale 1.2` cap keeps the
 slam violent without ever bleeding past the 1080px frame edges.
 
+## Second clip — "starts defining you." (`StartsDefining`)
+
+A standalone **4-second, 9:16, 60fps** (240-frame) cinematic dark-mode
+typewriter, inspired by the Apple-keynote glowing-cursor treatment.
+
+- **Atmosphere** — one rich gradient, a deep void bleeding into a foggy blue
+  wash at the bottom edge:
+  `linear-gradient(180deg, #020205 0%, #0a0e27 60%, #1a3b7c 90%, #6fa6df 100%)`.
+- **Type** — "starts defining you." in pure-white Inter 600, letter-spacing
+  `-1.5px`, absolute center.
+- **The hero element** — a neon glowing rod (6px wide, height locked to the
+  text's line-height, `#007fff`) with a heavy bloom
+  (`box-shadow: 0 0 12px 2px rgba(0,127,255,.8), 0 0 24px 8px rgba(0,127,255,.4)`)
+  that trails the leading edge of the text.
+- **Timeline** (in seconds, so it's fps-independent) — `0–0.5s` the rod blinks
+  rapidly dead-center; `0.5–2.5s` the phrase types out linearly; `2.5–4s` it
+  holds centered and the rod returns to its rapid blink.
+
 ## Run it
 
 ```bash
 npm install
-npm start            # open Remotion Studio
-npm run build        # render out/overthink-takeover.mp4
+npm start                # open Remotion Studio
+npm run build            # render Overthink   → out/overthink-takeover.mp4
+npm run build:defining   # render StartsDefining → out/starts-defining.mp4
 ```
