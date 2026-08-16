@@ -122,6 +122,76 @@ export const CAMERA_SPRING = {
 } as const;
 
 /* -------------------------------------------------------------------------- */
+/* Apple UI motion — for interface elements rendered inside a video (§7)        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * UI-grade easing curves — stronger than the HIG set in {@link EASE}. Use these
+ * when animating a rendered *control* (button, dropdown, sheet, toast); keep
+ * {@link EASE} for camera, type reveals, and atmosphere. Never `ease-in` on a
+ * UI entrance — it delays the moment the viewer is watching the control respond.
+ */
+export const UI_EASE = {
+  /** Strong ease-out for UI — near-vertical launch, long settle. */
+  out: Easing.bezier(0.23, 1, 0.32, 1),
+  /** Strong ease-in-out for on-screen moves (tab indicators, repositions). */
+  inOut: Easing.bezier(0.77, 0, 0.175, 1),
+  /** The iOS drawer/sheet curve (Ionic/Vaul) — firm pull, soft arrival. */
+  drawer: Easing.bezier(0.32, 0.72, 0, 1),
+} as const;
+
+/**
+ * Apple's concrete UI springs, given by Apple as (damping ratio, response) and
+ * converted here to Remotion's stiffness/damping/mass via
+ * `k = (2π/response)²`, `c = 2ζ√k`. Settle times verified with `measureSpring` —
+ * see APPLE_MOTION.md §7.
+ *
+ * Default to `move` (critically damped, no overshoot). Reach for `rotate` /
+ * `drawer` (ζ 0.8, ~1.5% overshoot) only when the motion simulates something the
+ * user threw — a flicked card, a released drag.
+ */
+export const UI_SPRING = {
+  /** ζ 1.0, response 0.4s → settles 28f (467ms) @60fps, no overshoot. Move/reposition. */
+  move: { stiffness: 247, damping: 31, mass: 1 },
+  /** ζ 0.8, response 0.4s → settles 28f @60fps, 1.6% overshoot. Rotation, momentum. */
+  rotate: { stiffness: 247, damping: 25, mass: 1 },
+  /** ζ 0.8, response 0.3s → settles 21f (350ms) @60fps, 1.3% overshoot. Drawers/sheets. */
+  drawer: { stiffness: 439, damping: 34, mass: 1 },
+} as const;
+
+/**
+ * UI component durations, in milliseconds. Rendered controls stay < 300ms — a
+ * dropdown that takes 400ms reads as sluggish because the viewer measures it
+ * against a real control. (Cinematic beats are the opposite; see DURATION.)
+ */
+export const UI_DURATION = {
+  buttonPress: 160,
+  tooltip: 125,
+  dropdown: 200,
+  modal: 250,
+  drawer: 500,
+  toast: 400,
+} as const;
+
+/**
+ * Enter geometry for common UI components. Never `scale(0)` — start from
+ * `scaleFrom` + opacity 0. Popovers/dropdowns/tooltips scale from their
+ * trigger's anchor (`transformOrigin` at the source), not center; modals are
+ * exempt and stay centered.
+ */
+export const UI_ENTER = {
+  buttonPress: { scaleFrom: 0.97 },
+  dropdown: { scaleFrom: 0.95, transformOrigin: "trigger" },
+  tooltip: { scaleFrom: 0.97, transformOrigin: "trigger" },
+  modal: { scaleFrom: 0.96, transformOrigin: "center" },
+  /** Sheets translate by their own height — `translateY(100%) → 0`. */
+  drawer: { translateY: "100%" },
+  toast: { translateY: "100%" },
+  /** Per-item entrance offset for a group; pair with STAGGER.word-ish 50ms. */
+  staggerItem: { translateY: 8, staggerMs: 50 },
+} as const;
+
+/* -------------------------------------------------------------------------- */
 /* Stagger                                                                     */
 /* -------------------------------------------------------------------------- */
 

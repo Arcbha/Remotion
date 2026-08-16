@@ -21,10 +21,28 @@ Import tokens from [`src/motion.ts`](./src/motion.ts) — never re-type magic
 numbers:
 
 ```ts
-import { DURATION, EASE, SPRING, CLAMP, useMs } from "./motion";
+import { DURATION, EASE, SPRING, CLAMP, useMs } from "./motion";       // cinematic
+import { UI_EASE, UI_SPRING, UI_DURATION, UI_ENTER } from "./motion";  // UI-in-video
 ```
 
 Colour and type tokens live in [`src/theme.ts`](./src/theme.ts).
+
+### Two motion families — pick by what you're animating
+
+`APPLE_MOTION.md` deliberately carries **two** easing/spring sets; use the right one:
+
+- **Cinematic / ambient** (camera, type reveals, atmosphere, title beats) →
+  `EASE` + `SPRING` (§4–5). Beats can run 400–500ms+.
+- **A rendered UI element** (a button, dropdown, sheet, toast *inside* the frame)
+  → `UI_EASE` + `UI_SPRING` + `UI_DURATION` (§7), Apple's exact interface motion.
+  These controls stay **under 300ms** or they read as sluggish.
+
+They agree on the essentials (no overshoot by default, never `ease-in` on
+entrances, `transform`/`opacity` only). When a video renders UI, match Apple's
+real UI motion from §7 — don't approximate it with the cinematic curves. The
+*interactive* machinery behind Apple UI (gestures, velocity handoff,
+interruptibility, reduced-motion/hover gating) is **inert in a render**: keyframe
+the visible result, don't wire up input (§7, "What is inert in a render").
 
 ## Commands
 
