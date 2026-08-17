@@ -80,6 +80,21 @@ export const textGlow =
   "drop-shadow(0 0 18px rgba(150,190,255,0.45)) drop-shadow(0 0 42px rgba(60,120,230,0.30))";
 
 /**
+ * Apple Ember — the keynote's warm accent, spent on a single emphasised word.
+ * Vertical only, so it reads as one lit surface rather than a colour sweep.
+ */
+export const emberGradient = "linear-gradient(180deg, #ff9500 0%, #ff5e00 100%)";
+
+/** Apple system gray — where an emphasised word settles once its beat is spent. */
+export const systemGray = "#86868b";
+
+/**
+ * A clean ambient shadow under display type. Grounds the glyphs so they read as
+ * a lit surface lifted off the field rather than paint sitting on glass.
+ */
+export const keynoteShadow = "drop-shadow(0px 8px 16px rgba(0, 0, 0, 0.3))";
+
+/**
  * Ambient bloom for the neon rod. Deliberately diffuse — a soft light source
  * bleeding into the void rather than a hard laser edge. Low opacity across two
  * wide radii is what reads as atmosphere.

@@ -22,8 +22,11 @@ import {
 import {
   atmosphere,
   cinematic,
+  emberGradient,
   fonts,
+  keynoteShadow,
   neonBloom,
+  systemGray,
   textGlow,
   textGradient,
   tracking,
@@ -36,13 +39,17 @@ import {
  *
  * Three phases:
  *   1 · 0–150   Camera holds at 5× macro. Characters reveal with a 3-frame
- *               micro-fade while the camera pans so the neon rod stays locked
- *               to the exact centre of the viewport (`lockToCenterX`).
+ *               micro-fade while the camera pans so the neon rod stays pinned
+ *               to the 75% mark of the viewport (`lockToCenterX`), leaving the
+ *               left three-quarters of frame as readable runway for the type.
  *   2 · 150     Violent snap — `CAMERA_SPRING.cinematicSnap` slams scale 5 → 1
  *               and translateX → 0, with optical blur tracking the camera's
- *               instantaneous velocity.
- *   3 · 150–240 The rod blinks on a 5-frame cadence; from frame 180 the camera
- *               creeps 1.0 → 0.98 so the scene never dead-stops.
+ *               instantaneous velocity. "defining" turns ember on this frame,
+ *               inside the blur peak, so the colour change reads as impact.
+ *   3 · 150–240 The rod blinks on a 5-frame cadence; "defining" settles from
+ *               ember to system gray over 175–185 as the spring's kinetic
+ *               energy dies; from frame 180 the camera creeps 1.0 → 0.98 so
+ *               the scene never dead-stops.
  *
  * All easing, springs and durations come from `src/motion.ts`; all colour,
  * gradient and glow tokens from `src/theme.ts`.
@@ -78,7 +85,14 @@ const SNAP_FRAME = 150;
 const DRIFT_START = 180;
 const DRIFT_END = 240;
 
+// The emphasised word — TEXT.slice(7, 15) === "defining".
+const DEFINING_START = 7;
+const DEFINING_END = 15;
+const COLOR_SNAP_START = 175;
+const COLOR_SNAP_END = 185;
+
 const MACRO_SCALE = 5;
+const CURSOR_ANCHOR = 0.75; // fraction of the width the rod is pinned to
 const DRIFT_SCALE = 0.98; // the creeping breath of Phase 3
 const BLINK_PERIOD = 5; // rapid 5-frame cadence during the hold
 const CHAR_FADE = 3; // frames for a character's micro-fade
@@ -214,14 +228,25 @@ export const StartsDefining: React.FC = () => {
 
   /* -- Camera -------------------------------------------------------------- */
   // The stage is centred, so at translateX 0 / scale 1 the full phrase reads
-  // dead-centre. During Phase 1 the camera pans so the rod's centre maps onto
-  // the viewport centre.
+  // dead-centre. During Phase 1 the camera pans so the rod sits on the anchor.
+  //
+  // The anchor is at 75% of the width, not the centre: at 5× only 1080/5 = 216px
+  // of content is on screen, so a centred rod leaves just ~108px — barely two
+  // glyphs — for the text trailing behind it. Pushing the rod right hands the
+  // incoming words ~162px of runway and makes the macro phase readable.
+  // The camera scales about its centre, so `lockToCenterX` solves for the centre
+  // only. Shifting the lock to the 75% mark is a plain screen-space offset added
+  // *after* scaling — feeding the anchor in as the origin instead would inflate
+  // it by the scale factor and throw the rod (S−1)·(anchor−centre) = 1080px off
+  // the right edge at 5×.
+  const anchorOffset = (CURSOR_ANCHOR - 0.5) * width;
   const stageLeft = width / 2 - lineWidth / 2;
-  const macroX = lockToCenterX(
-    stageLeft + cursorX + GAP + CURSOR_WIDTH / 2,
-    width / 2,
-    MACRO_SCALE
-  );
+  const macroX =
+    lockToCenterX(
+      stageLeft + cursorX + GAP + CURSOR_WIDTH / 2,
+      width / 2,
+      MACRO_SCALE
+    ) + anchorOffset;
 
   const pastSnap = frame - SNAP_FRAME;
   const snapScale = snapScaleAt(pastSnap, fps);
@@ -235,11 +260,12 @@ export const StartsDefining: React.FC = () => {
   const scale = snapScale * drift;
 
   // At the snap the phrase is fully typed, so the pan starts from its end position.
-  const macroXAtSnap = lockToCenterX(
-    stageLeft + fullWidth + GAP + CURSOR_WIDTH / 2,
-    width / 2,
-    MACRO_SCALE
-  );
+  const macroXAtSnap =
+    lockToCenterX(
+      stageLeft + fullWidth + GAP + CURSOR_WIDTH / 2,
+      width / 2,
+      MACRO_SCALE
+    ) + anchorOffset;
   const translateX =
     frame < SNAP_FRAME
       ? macroX
@@ -271,7 +297,25 @@ export const StartsDefining: React.FC = () => {
   const blinkOn = Math.floor(pastSnap / BLINK_PERIOD) % 2 === 0;
   const cursorOpacity = frame >= SNAP_FRAME ? (blinkOn ? 1 : 0) : reveal;
 
+  /* -- The "defining" colour snap ------------------------------------------ */
+  // The word turns ember the instant the camera fires, which lands inside the
+  // motion blur's peak so the switch reads as part of the impact rather than a
+  // colour pop. It then settles to system gray as the spring's last kinetic
+  // energy dies.
+  //
+  // Gray is stacked *over* a fully opaque ember rather than the two being
+  // cross-dissolved in opposite directions: two half-opaque copies of the same
+  // glyphs composite to ~0.75 alpha at the midpoint, letting the void show
+  // through and dimming the word mid-transition. Holding ember at 1 and fading
+  // gray in on top keeps the word solid the whole way across.
+  const emphasised = frame >= SNAP_FRAME;
+  const settle = interpolate(frame, [COLOR_SNAP_START, COLOR_SNAP_END], [0, 1], {
+    easing: EASE.inOut,
+    ...CLAMP,
+  });
+
   const glyphs = TEXT.split("");
+  const isEmphasised = (i: number) => i >= DEFINING_START && i < DEFINING_END;
 
   return (
     <AbsoluteFill style={{ background: atmosphere, fontFamily: fonts.display }}>
@@ -328,32 +372,71 @@ export const StartsDefining: React.FC = () => {
                 opacity hit exactly 1 — turning the fade into a delayed pop.
                 The fill is purely vertical and every glyph shares the line box,
                 so per-glyph clipping is visually identical to clipping the run. */}
-            <span
+            <div
               style={{
                 ...glyphRun,
                 position: "absolute",
                 left: 0,
                 top: "50%",
+                width: fullWidth,
                 transform: "translateY(-50%)",
-                filter: textGlow,
+                filter: `${textGlow} ${keynoteShadow}`,
               }}
             >
-              {glyphs.map((c, i) => (
-                <span
-                  key={i}
-                  style={{
-                    opacity: charOpacity(i),
-                    backgroundImage: textGradient,
-                    WebkitBackgroundClip: "text",
-                    backgroundClip: "text",
-                    WebkitTextFillColor: "transparent",
-                    color: "transparent",
-                  }}
-                >
-                  {c}
-                </span>
-              ))}
-            </span>
+              <span>
+                {glyphs.map((c, i) => (
+                  <span
+                    key={i}
+                    style={{
+                      // The base run yields "defining" to the colour layers the
+                      // moment the camera fires.
+                      opacity:
+                        emphasised && isEmphasised(i) ? 0 : charOpacity(i),
+                      backgroundImage: textGradient,
+                      WebkitBackgroundClip: "text",
+                      backgroundClip: "text",
+                      WebkitTextFillColor: "transparent",
+                      color: "transparent",
+                    }}
+                  >
+                    {c}
+                  </span>
+                ))}
+              </span>
+
+              {/* "defining", ember — held solid under the settling gray. Sits at
+                  the exact prefix offset of the word, and because kerning and
+                  ligatures are off it lands glyph-for-glyph on the base run. */}
+              <span
+                style={{
+                  position: "absolute",
+                  left: prefixes[DEFINING_START],
+                  top: 0,
+                  opacity: emphasised ? 1 : 0,
+                  backgroundImage: emberGradient,
+                  WebkitBackgroundClip: "text",
+                  backgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                  color: "transparent",
+                }}
+              >
+                {TEXT.slice(DEFINING_START, DEFINING_END)}
+              </span>
+
+              {/* "defining", system gray — fades in over the ember as the
+                  spring's last kinetic energy dies. */}
+              <span
+                style={{
+                  position: "absolute",
+                  left: prefixes[DEFINING_START],
+                  top: 0,
+                  opacity: emphasised ? settle : 0,
+                  color: systemGray,
+                }}
+              >
+                {TEXT.slice(DEFINING_START, DEFINING_END)}
+              </span>
+            </div>
 
             {/* The hero — a soft, illuminated neon pill trailing the text */}
             <div
