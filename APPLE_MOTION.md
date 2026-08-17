@@ -20,16 +20,17 @@ document, this document is the default and the request wins only if explicit.
 4. [Easing Curves & Graphs](#4-easing-curves--graphs)
 5. [Spring Physics](#5-spring-physics)
 6. [Transition & Enter/Exit Patterns](#6-transition--enterexit-patterns)
-7. [Stagger & Rhythm](#7-stagger--rhythm)
-8. [Typography for Motion](#8-typography-for-motion)
-9. [Color, Surfaces & Depth](#9-color-surfaces--depth)
-10. [Layer Stacking & Camera](#10-layer-stacking--camera)
-11. [Glow, Gradient & Atmosphere](#11-glow-gradient--atmosphere)
-12. [Accessibility & Safety](#12-accessibility--safety)
-13. [Performance & Render Rules](#13-performance--render-rules)
-14. [Anti-Patterns](#14-anti-patterns)
-15. [Copy-Paste Snippets](#15-copy-paste-snippets)
-16. [Provenance & Deliberate Deviations](#16-provenance--deliberate-deviations)
+7. [Apple UI Motion (UI inside video)](#7-apple-ui-motion-when-ui-appears-inside-the-video)
+8. [Stagger & Rhythm](#8-stagger--rhythm)
+9. [Typography for Motion](#9-typography-for-motion)
+10. [Color, Surfaces & Depth](#10-color-surfaces--depth)
+11. [Layer Stacking & Camera](#11-layer-stacking--camera)
+12. [Glow, Gradient & Atmosphere](#12-glow-gradient--atmosphere)
+13. [Accessibility & Safety](#13-accessibility--safety)
+14. [Performance & Render Rules](#14-performance--render-rules)
+15. [Anti-Patterns](#15-anti-patterns)
+16. [Copy-Paste Snippets](#16-copy-paste-snippets)
+17. [Provenance & Deliberate Deviations](#17-provenance--deliberate-deviations)
 
 ---
 
@@ -413,7 +414,170 @@ items appear from the anchor: scale `0.8 → 1`, opacity `0 → 1`, spring
 
 ---
 
-## 7. Stagger & Rhythm
+## 7. Apple UI Motion (when UI appears inside the video)
+
+A composition often has to show a *real interface* — a button depressing, a
+sheet sliding up, a dropdown opening, a toast arriving, a notification landing.
+When it does, the motion must match **Apple's actual UI motion**, not a
+cinematic approximation. This section is the exact-values layer for that, drawn
+from Apple's WWDC design talks (*Designing Fluid Interfaces*, *The Details of UI
+Typography*) by way of Emil Kowalski's animation skills.
+
+**The critical reframing for video:** in a live app these behaviours are
+*interactive* — driven by a finger, interruptible, velocity-aware. In a render
+there is no finger. So you keep the **values and shapes** (the spring configs,
+the curves, the enter/exit geometry) and drop the **input machinery** (see
+[What is inert in a render](#what-is-inert-in-a-render) below). You are
+reproducing the *result* of Apple's motion on a fixed timeline.
+
+### Should this UI element animate? (the purpose gate)
+
+Before adding UI motion, name its purpose in one word — **feedback**, **spatial
+consistency**, **state indication**, **preventing a jarring change**, or
+**explanation**. If you can't name it, don't animate it.
+
+> The *frequency* and *hover* gates from interactive UI (— "no animation on a
+> 100×/day action", "gate `:hover` behind `pointer: fine`" —) **do not apply in
+> a render.** There is no repeat-use fatigue in a fixed video and no pointer to
+> false-fire. Ignore those two gates here; keep the purpose gate.
+
+### Apple UI springs — exact ships, translated to Remotion
+
+Apple specifies UI springs as **damping ratio (ζ)** + **response (seconds)**.
+Below are the three concrete configs Apple ships, each converted to Remotion's
+`stiffness / damping / mass` (mass = 1) via
+`k = (2π/response)²`, `c = 2ζ√k`, then **verified with `measureSpring`**:
+
+| Apple interaction | ζ | response | → Remotion config | Settle @60fps | Overshoot |
+|---|---|---|---|---|---|
+| Move / reposition (PiP) | 1.0 | 0.4s | `{ stiffness: 247, damping: 31, mass: 1 }` | 28f (467ms) | none |
+| Rotation | 0.8 | 0.4s | `{ stiffness: 247, damping: 25, mass: 1 }` | 28f (467ms) | 1.6% |
+| Drawer / sheet | 0.8 | 0.3s | `{ stiffness: 439, damping: 34, mass: 1 }` | 21f (350ms) | 1.3% |
+
+These live in `src/motion.ts` as `UI_SPRING.move` / `.rotate` / `.drawer`.
+
+**The default-damping law (Apple + Emil agree):** start every UI spring
+**critically damped, ζ = 1.0, no overshoot**. Add bounce (ζ ≈ 0.8, the ~1.5%
+overshoot above) **only when the motion simulates something the user threw** — a
+flicked card, a released drag, a drawer kicked closed. Overshoot on a menu that
+merely faded in is wrong; overshoot on a flicked sheet is right. This is exactly
+the [Spring Physics §5](#5-spring-physics) rule restated for UI, and the HIG
+`SPRING.default` (300/30/1) is an equally valid critically-damped choice.
+
+### UI-grade easing curves (stronger than the HIG set)
+
+The five [HIG curves in §4](#4-easing-curves--graphs) are tuned for ambient and
+cinematic motion. For *UI elements* the platform uses **stronger** ease-outs —
+they leave the start faster and settle longer, which reads as more responsive on
+a control. Use these when animating buttons, popovers, sheets, and toasts;
+keep the HIG curves for camera, type reveals, and atmosphere.
+
+```ts
+// in src/motion.ts as UI_EASE
+UI_EASE.out     = Easing.bezier(0.23, 1, 0.32, 1);     // strong ease-out for UI
+UI_EASE.inOut   = Easing.bezier(0.77, 0, 0.175, 1);    // strong ease-in-out, on-screen moves
+UI_EASE.drawer  = Easing.bezier(0.32, 0.72, 0, 1);     // iOS drawer curve (Ionic/Vaul)
+```
+
+`UI_EASE.out` — `cubic-bezier(0.23, 1, 0.32, 1)` — near-vertical launch, long tail:
+
+```
+                      ████████████████████████
+                ███████
+             ████
+           ███
+          ██
+        ███
+       ██
+      ██
+     ██
+    ██
+   ██
+  ██
+```
+
+`UI_EASE.drawer` — `cubic-bezier(0.32, 0.72, 0, 1)` — the iOS sheet curve; a firm
+pull with a soft arrival. Pair it with the drawer geometry below.
+
+**Never `ease-in` on a UI element.** It starts slow and delays the exact moment
+the viewer is watching the control respond. `UI_EASE.out` at 200ms *reads* faster
+than `ease-in` at 200ms.
+
+### UI component durations
+
+| Element | Duration | @60fps |
+|---|---|---|
+| Button press feedback | 100–160ms | 6–10f |
+| Tooltip, small popover | 125–200ms | 8–12f |
+| Dropdown, select | 150–250ms | 9–15f |
+| Modal, drawer | 200–500ms | 12–30f |
+
+> **This is the one place inside a video where the "controls stay under 300ms"
+> rule holds.** A rendered dropdown that takes 400ms reads as sluggish because
+> the viewer's instinct still measures it against a real control. Cinematic beats
+> (§3) are the opposite — there, 400–500ms is correct. Know which one you're
+> animating.
+
+### Component recipes → Remotion
+
+Exact enter geometry. **Never `scale(0)`** — nothing appears from nothing; start
+from `scale(0.95–0.97)` + `opacity 0`. Popovers/dropdowns/tooltips scale from
+their **trigger's** anchor (`transformOrigin` at the source element); modals are
+exempt and stay centered.
+
+| Component | Enter | Exit | Curve / spring | Duration |
+|---|---|---|---|---|
+| Button press | `scale 1 → 0.97` | `→ 1` | `UI_EASE.out` | 160ms |
+| Dropdown / menu | `opacity 0→1`, `scale 0.95→1`, origin = trigger | reverse | `UI_EASE.out` | 200ms |
+| Tooltip | `opacity 0→1`, `scale 0.97→1`, origin = trigger | reverse | `UI_EASE.out` | 125ms |
+| Modal | `opacity 0→1`, `scale 0.96→1`, centered + backdrop fade | reverse | `UI_EASE.out` | 250ms |
+| Drawer / sheet | `translateY 100% → 0` | `→ 100%` | `UI_EASE.drawer` or `UI_SPRING.drawer` | 500ms |
+| Toast | `opacity 0→1`, `translateY 100% → 0` | reverse (same path) | `EASE` (plain `ease`) | 400ms |
+| Group stagger | items `opacity 0→1`, `translateY 8px→0` | — | `UI_EASE.out`, 50ms apart | 300ms each |
+
+`translateY(100%)` is relative to the element's own height — it always travels
+exactly its own size regardless of content. Prefer it to hardcoded pixels.
+
+```tsx
+// A dropdown opening at frame START, scaling out of its trigger.
+const p = spring({ frame: frame - START, fps, config: UI_SPRING.move });
+// or, for a curve-based control: interpolate(frame,[START,START+ms(200)],[0,1],{easing:UI_EASE.out,...CLAMP})
+
+<div style={{
+  opacity: p,
+  transform: `scale(${interpolate(p, [0, 1], [0.95, 1])})`,
+  transformOrigin: "top left",   // the trigger's anchor, not center
+}} />
+```
+
+**Exit the way you entered.** A toast that arrives from the bottom leaves through
+the bottom; a sheet that rose from below drops back down. Symmetric paths are
+the whole reason swipe-to-dismiss reads as obvious — reproduce that symmetry
+even though nothing is being swiped.
+
+### What is inert in a render
+
+Apple's fluid-interface machinery is *interactive*, and a rendered video has no
+input. The following are **load-bearing in a live app but inert on a fixed
+timeline** — reproduce their visible *result* by keyframing it, never by wiring
+up the mechanism:
+
+| Interactive concept | In a render |
+|---|---|
+| 1:1 pointer tracking, `setPointerCapture` | Animate the element along the path a finger *would* have dragged. |
+| Velocity handoff (gesture → spring initial velocity) | Pick the spring so its opening speed matches the implied throw. |
+| Momentum projection (flick → landing point) | Choose the landing frame yourself; there's no live velocity. |
+| Interruptibility / reversal mid-flight | There is no user to interrupt. Author the one intended path. |
+| Rubber-banding at boundaries | Only if you're *depicting* an over-scroll; keyframe the resistance. |
+| `prefers-reduced-motion`, `@media (hover)` gating | No live media queries in a render. (Ship them if the deliverable is an actual component, not a video.) |
+
+If a composition's *subject* is one of these behaviours — an explainer showing
+how drag-to-dismiss feels — you animate the outcome on the timeline and may note
+the deviation in the component's doc comment.
+
+---
+
+## 8. Stagger & Rhythm
 
 | Content | Stagger | Cap |
 |---|---|---|
@@ -433,7 +597,7 @@ items appear from the anchor: scale `0.8 → 1`, opacity `0 → 1`, spring
 
 ---
 
-## 8. Typography for Motion
+## 9. Typography for Motion
 
 ### Family & weights
 - **Inter**, self-hosted (`@fontsource/inter`) as the SF Pro substitute.
@@ -484,7 +648,7 @@ Never apply negative tracking below ~24px — it destroys legibility.
 
 ---
 
-## 9. Color, Surfaces & Depth
+## 10. Color, Surfaces & Depth
 
 ### Light system (Apple.com / product pages)
 
@@ -522,7 +686,7 @@ Never apply negative tracking below ~24px — it destroys legibility.
 
 ---
 
-## 10. Layer Stacking & Camera
+## 11. Layer Stacking & Camera
 
 ### Canonical stack (back → front)
 
@@ -587,7 +751,7 @@ subtract offsets by hand across a long timeline.
 
 ---
 
-## 11. Glow, Gradient & Atmosphere
+## 12. Glow, Gradient & Atmosphere
 
 Apple's dark keynote look is built from **light**, not from strokes.
 
@@ -644,7 +808,7 @@ filter:
 
 ---
 
-## 12. Accessibility & Safety
+## 13. Accessibility & Safety
 
 - **Reduced motion:** when honoring `prefers-reduced-motion`, sliding transitions
   become **crossfades** (opacity only), parallax is removed, springs become
@@ -661,7 +825,7 @@ filter:
 
 ---
 
-## 13. Performance & Render Rules
+## 14. Performance & Render Rules
 
 - **Animate compositor properties only:** `transform` and `opacity`.
 - **Never animate layout properties:** `width`, `height`, `top`, `left`,
@@ -679,7 +843,7 @@ filter:
 
 ---
 
-## 14. Anti-Patterns
+## 15. Anti-Patterns
 
 **Motion**
 - Bouncy overshoot on UI-like elements (Apple springs do not overshoot)
@@ -707,7 +871,7 @@ filter:
 
 ---
 
-## 15. Copy-Paste Snippets
+## 16. Copy-Paste Snippets
 
 ### `src/motion.ts` — the shared motion module
 
@@ -823,7 +987,7 @@ useEffect(() => {
 
 ---
 
-## 16. Provenance & Deliberate Deviations
+## 17. Provenance & Deliberate Deviations
 
 **Sources merged into this document:**
 
@@ -833,10 +997,25 @@ useEffect(() => {
 | *Apple Design Skill* (HIG/SwiftUI) | Clarity / Deference / Depth pillars, semantic type hierarchy, accessibility and contrast thresholds |
 | *Apple UI Designer* role brief | Design philosophy, "motion explains hierarchy, not decorates", the avoid list, prefer-removal decision rules |
 | *Apple UI Skills* token dump | Inter as the type family, compositor-props-only performance rules, focus/disabled state conventions |
+| *Emil Kowalski — `apple-design` + `animate` skills* | §7 in full: Apple's exact damping/response UI springs, the stronger UI-grade easing curves, UI component durations and enter/exit geometry, the "name the purpose" gate, `scale(0.95)`-not-`scale(0)`, and the size-specific tracking/leading discipline folded into §9 |
 
-Spring settle times, damping ratios, and easing graphs in §4–5 were **computed
-directly** with Remotion's `measureSpring` and a cubic-bezier sampler rather than
-copied — they are verified against this repo's renderer.
+Spring settle times, damping ratios, and easing graphs in §4–5 and §7 were
+**computed directly** with Remotion's `measureSpring` and a cubic-bezier sampler
+rather than copied — including the Apple damping/response → Remotion
+stiffness/damping/mass conversions in §7, which are verified against this repo's
+renderer.
+
+### Why both a HIG set (§4–5) and a UI set (§7)
+
+The two easing/spring families are kept **side by side on purpose**, not
+reconciled into one. The HIG curves and springs (§4–5) are tuned for **cinematic
+and ambient** motion — camera, type reveals, atmosphere. Emil's UI-grade curves
+and Apple's damping/response springs (§7) are tuned for **rendered interface
+elements** — a button, a sheet, a toast inside the frame. They agree on the
+essentials (no overshoot by default; never `ease-in` on entrances;
+`transform`/`opacity` only) and diverge only where the medium demands it (UI
+controls stay < 300ms; cinematic beats run longer). Pick by what you're
+animating, per the guidance at the top of §7.
 
 ### What was deliberately **not** carried over
 
@@ -849,9 +1028,10 @@ that would actively damage this work. Excluded, with reasons:
 | `text-primary: #808080`, `surface-raised: #0858DC` | Scraper artifacts. A mid-gray for headings fails contrast and is not Apple; a saturated blue for card surfaces is a mis-read. Apple's real ink is `#1d1d1f`. |
 | "NEVER add animation unless explicitly requested" | A guardrail for UI agents. In a motion-graphics repo, animation *is* the deliverable. |
 | "NEVER exceed 200ms for interaction feedback" | Correct for UI micro-feedback, wrong for cinematic transitions, which run 300–500ms by Apple's own scale. |
-| "NEVER modify letter-spacing" | Directly contradicts Apple display typography, which depends on tight negative tracking on large type (see §8). |
+| "NEVER modify letter-spacing" | Directly contradicts Apple display typography, which depends on tight negative tracking on large type (see §9). |
 | Light-mode-only palette; 1920px viewport; 21px radius scale | Web-page constraints. This repo renders 1080×1920 vertical video, frequently dark. |
-| Fixed "51px/700 headings, 27px/500 body" | Scraped from one page at one breakpoint. §8 supplies a real scale for a 1080-wide vertical canvas. |
+| Fixed "51px/700 headings, 27px/500 body" | Scraped from one page at one breakpoint. §9 supplies a real scale for a 1080-wide vertical canvas. |
+| Emil's gesture/interaction *machinery* — pointer capture, velocity handoff, momentum projection, interruptibility, rubber-banding, `backdrop-filter` materials, `prefers-reduced-motion` / `@media (hover)` gating | Load-bearing in a live app, **inert in a render** — there is no finger, no interrupt, no live media query. §7's "What is inert in a render" table keeps their *visible result* (keyframe it) and drops the mechanism. Ship the mechanism only when the deliverable is an actual component, not a video. |
 
 The **4px spacing grid** was kept in spirit (all spacing on a 4px multiple,
 8px preferred for larger gaps) since it survives the change of medium.
