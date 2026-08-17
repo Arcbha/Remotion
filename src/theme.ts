@@ -83,7 +83,7 @@ export const textGlow =
  * Apple Ember — the keynote's warm accent, spent on a single emphasised word.
  * Vertical only, so it reads as one lit surface rather than a colour sweep.
  */
-export const emberGradient = "linear-gradient(180deg, #ff9500 0%, #ff5e00 100%)";
+export const emberGradient = "linear-gradient(180deg, #ff9500 0%, #ff7a00 100%)";
 
 /** Apple system gray — where an emphasised word settles once its beat is spent. */
 export const systemGray = "#86868b";
