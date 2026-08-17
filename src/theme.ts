@@ -44,19 +44,25 @@ export const cinematic = {
 } as const;
 
 /**
- * The full atmospheric backdrop: a radial bloom behind the subject over a
- * five-stop vertical field. Four-plus stops are mandatory — two-stop gradients
- * band visibly at 1080p.
+ * The atmospheric backdrop. The deep void owns ~85% of the frame; the blue
+ * survives only as a faint floor reflection along the bottom edge, never as a
+ * thick colour band. Six stops, because two-stop gradients band visibly at
+ * 1080p and this field is almost entirely near-black.
  */
-export const voidBloom =
-  "radial-gradient(65% 45% at 50% 60%, rgba(42,112,222,0.35), transparent 72%)";
-
 export const voidGradient =
-  `linear-gradient(180deg, ${cinematic.void} 0%, ${cinematic.abyss} 42%, ` +
-  `${cinematic.deepBlue} 74%, ${cinematic.vividBlue} 90%, ${cinematic.haze} 100%)`;
+  `linear-gradient(180deg, ${cinematic.void} 0%, #01030b 46%, #02050f 68%, ` +
+  `#030916 84%, #0a2450 93%, #1e4f9e 100%)`;
 
-/** Bloom over field — assign straight to `background`. */
-export const atmosphere = `${voidBloom}, ${voidGradient}`;
+/** The floor reflection — a wide, low bloom hugging the bottom edge. */
+export const floorGlow =
+  "radial-gradient(95% 26% at 50% 101%, rgba(47,106,194,0.50), transparent 72%)";
+
+/** A very soft lift behind the subject so the centre of frame has volume. */
+export const subjectBloom =
+  "radial-gradient(58% 26% at 50% 50%, rgba(28,74,168,0.16), transparent 72%)";
+
+/** Bloom over floor over field — assign straight to `background`. */
+export const atmosphere = `${subjectBloom}, ${floorGlow}, ${voidGradient}`;
 
 /**
  * The subtle internal fill for display type on the dark field — barely
@@ -73,9 +79,13 @@ export const textGradient =
 export const textGlow =
   "drop-shadow(0 0 18px rgba(150,190,255,0.45)) drop-shadow(0 0 42px rgba(60,120,230,0.30))";
 
-/** Emissive bloom for the neon rod — tight bright core, wide dim halo. */
+/**
+ * Ambient bloom for the neon rod. Deliberately diffuse — a soft light source
+ * bleeding into the void rather than a hard laser edge. Low opacity across two
+ * wide radii is what reads as atmosphere.
+ */
 export const neonBloom =
-  "0 0 12px 2px rgba(0, 127, 255, 0.8), 0 0 24px 8px rgba(0, 127, 255, 0.4)";
+  "0 0 20px 4px rgba(0, 127, 255, 0.25), 0 0 40px 10px rgba(0, 127, 255, 0.15)";
 
 export const fonts = {
   // Inter is the DESIGN.md-specified substitute for SF Pro Display / Text.
