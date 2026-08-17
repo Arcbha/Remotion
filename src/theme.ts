@@ -89,10 +89,19 @@ export const emberGradient = "linear-gradient(180deg, #ff9500 0%, #ff5e00 100%)"
 export const systemGray = "#86868b";
 
 /**
- * A clean ambient shadow under display type. Grounds the glyphs so they read as
- * a lit surface lifted off the field rather than paint sitting on glass.
+ * Ambient depth under display type.
+ *
+ * `apple-design` §12 gives one rule that bears on this: shadow is
+ * context-aware — "heavier over busy/text content for separation, lighter over
+ * plain backgrounds." This type sits on a plain, near-black void, so the
+ * shadow is the light end of that scale; a heavy black shadow on a black field
+ * does no work and only costs a filter pass.
+ *
+ * Strictly an ambient *cast* shadow. No bevel, emboss, inner shadow or
+ * `inset` treatment appears anywhere in this system — depth comes from light
+ * and layering, never from a fake edge on the glyph itself.
  */
-export const keynoteShadow = "drop-shadow(0px 8px 16px rgba(0, 0, 0, 0.3))";
+export const keynoteShadow = "drop-shadow(0px 6px 14px rgba(0, 0, 0, 0.18))";
 
 /**
  * Ambient bloom for the neon rod. Deliberately diffuse — a soft light source
@@ -103,7 +112,11 @@ export const neonBloom =
   "0 0 20px 4px rgba(0, 127, 255, 0.25), 0 0 40px 10px rgba(0, 127, 255, 0.15)";
 
 export const fonts = {
-  // Inter is the DESIGN.md-specified substitute for SF Pro Display / Text.
+  /**
+   * Light-mode compositions. The dark cinematic pieces resolve their family
+   * from `src/fonts.ts` (`FONT_STACK`), which puts SF Pro Display first and
+   * keeps Inter as the documented fallback.
+   */
   display: "Inter, system-ui, -apple-system, sans-serif",
 };
 
@@ -115,7 +128,23 @@ export const tracking = {
   heading: "-0.28px", // 56px
 } as const;
 
-/** Display type scale for the 1080×1920 vertical canvas (APPLE_MOTION.md §9). */
+/**
+ * Display type scale for the 1080×1920 vertical canvas.
+ *
+ * Tracking and leading follow `apple-design` §15 (*The Details of UI
+ * Typography*, WWDC 2020) rather than fixed pixels: "Tracking is size-specific
+ * — never one value for all sizes… A fixed `letter-spacing` is wrong
+ * somewhere", and spacing belongs in `em`, not `px`, so it scales with the
+ * type. The skill's `.display` rule is `letter-spacing: -0.02em` with
+ * `line-height: 1.05`, which is what is encoded here — at 82px that resolves to
+ * −1.64px, satisfying APPLE_MOTION.md §9's "negative tracking that scales with
+ * size" law for display ≥64px.
+ */
 export const typeScale = {
-  headline: { fontSize: 82, fontWeight: 600, lineHeight: 1.0 },
+  headline: {
+    fontSize: 82,
+    fontWeight: 600,
+    lineHeight: 1.05,
+    trackingEm: -0.02,
+  },
 } as const;

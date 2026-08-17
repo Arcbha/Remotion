@@ -19,17 +19,16 @@ import {
   lockToCenterX,
   useMs,
 } from "./motion";
+import { FONT_STACK, waitForDisplayFont } from "./fonts";
 import {
   atmosphere,
   cinematic,
   emberGradient,
-  fonts,
   keynoteShadow,
   neonBloom,
   systemGray,
   textGlow,
   textGradient,
-  tracking,
   typeScale,
 } from "./theme";
 
@@ -37,11 +36,11 @@ import {
  * "starts defining you." — cinematic dark-mode typewriter with a macro camera.
  * 9:16 (1080×1920), 60fps, 4.0s (240 frames).
  *
- * Three phases:
- *   1 · 0–150   Camera holds at 5× macro. Characters reveal with a 3-frame
- *               micro-fade while the camera pans so the neon rod stays pinned
- *               to the 75% mark of the viewport (`lockToCenterX`), leaving the
- *               left three-quarters of frame as readable runway for the type.
+ * Phases:
+ *   1 · 0–150   Camera holds at 5× macro. Each glyph enters individually —
+ *               opacity 0→1 and an 8px rise on `EASE.out` — while the camera
+ *               pans so the rod stays pinned to the 75% mark, leaving the left
+ *               three-quarters of frame as readable runway.
  *   2 · 150     Violent snap — `CAMERA_SPRING.cinematicSnap` slams scale 5 → 1
  *               and translateX → 0, with optical blur tracking the camera's
  *               instantaneous velocity. "defining" turns ember on this frame,
@@ -51,39 +50,50 @@ import {
  *               energy dies; from frame 180 the camera creeps 1.0 → 0.98 so
  *               the scene never dead-stops.
  *
- * All easing, springs and durations come from `src/motion.ts`; all colour,
- * gradient and glow tokens from `src/theme.ts`.
+ * Sourcing — every value below is taken from the local rule set, not invented:
+ * - **Entering curve** `EASE.out` = `cubic-bezier(0.33, 1, 0.68, 1)`.
+ *   APPLE_MOTION.md §4 designates it for "Non-spring elements entering";
+ *   `animate` §5 and `review-animations/STANDARDS.md` both give "Entering or
+ *   exiting → ease-out" and ban `ease-in` on entrances. CLAUDE.md routes type
+ *   reveals to the cinematic family, which is why this is `EASE.out` and not
+ *   the UI-grade `UI_EASE.out`.
+ * - **Reveal geometry** `opacity 0→1` + `translateY(8px)→0`, lifted verbatim
+ *   from `review-animations/STANDARDS.md` §Stagger.
+ * - **Typography** `apple-design` §15 `.display`: tracking −0.02em (size-
+ *   relative, never fixed px), leading 1.05, `font-optical-sizing: auto`.
+ * - **Depth** `apple-design` §12: context-aware shadow, "lighter over plain
+ *   backgrounds". Ambient cast shadow only — no bevel, emboss or inner shadow.
  *
  * Deviations from APPLE_MOTION.md:
  * - §5: the snap uses the deliberately underdamped `CAMERA_SPRING.cinematicSnap`
- *   (ζ 0.50) rather than a HIG spring. This is the sanctioned house extension
- *   for camera moves and is the source of the slam.
+ *   (ζ 0.50) rather than a HIG spring — the sanctioned house extension for
+ *   camera moves, and the source of the slam.
  * - §5: that spring peaks at 1.165, so across the 5→1 scale range its raw
- *   overshoot would collapse scale to 0.34 — the phrase visibly shrinking to a
- *   third before recovering. `CLAMP` is spread into the camera interpolations so
- *   the slam keeps the spring's violent rise and stops dead at its target.
- * - §14 ("never animate blur() radius"): the snap animates a `filter: blur()` on
+ *   overshoot would collapse scale to 0.34. `CLAMP` is spread into the camera
+ *   interpolations so the slam keeps the violent rise and stops at its target.
+ * - §9 rule 3 ("typewriters run linear") applies to the *cadence*, which is
+ *   still linear — glyphs are scheduled at a constant rate and revealed whole.
+ *   Each glyph's own entrance eases, per the entering rule above.
+ * - §14 ("never animate blur() radius"): the snap animates `filter: blur()` on
  *   the subject to fake optical motion blur. Deliberate — a 5× zoom-out with no
- *   optical smear reads as a digital jump-cut rather than a camera move. Scoped
- *   to the ~10 frames of the snap and to one small element, so the per-frame
- *   cost stays bounded. The ghost layer's blur is static (transform/opacity only).
+ *   smear reads as a jump-cut. Scoped to the ~10 frames of the snap.
  */
 
 const TEXT = "starts defining you.";
 
-const { fontSize: FONT_SIZE, fontWeight: FONT_WEIGHT, lineHeight: LINE_HEIGHT } =
-  typeScale.headline;
-const LETTER_SPACING = parseFloat(tracking.headline); // −1.5px, applied per glyph
+const {
+  fontSize: FONT_SIZE,
+  fontWeight: FONT_WEIGHT,
+  lineHeight: LINE_HEIGHT,
+  trackingEm: TRACKING_EM,
+} = typeScale.headline;
+
+/** −0.02em resolved against the 82px display size (apple-design §15). */
+const LETTER_SPACING = TRACKING_EM * FONT_SIZE;
 
 const CURSOR_HEIGHT = FONT_SIZE * LINE_HEIGHT;
 const CURSOR_WIDTH = 6;
 const GAP = 14; // gap between the text's trailing edge and the rod
-
-// Phase boundaries, in frames (authored at a fixed 240f/60fps).
-const TYPE_START = 0;
-const SNAP_FRAME = 150;
-const DRIFT_START = 180;
-const DRIFT_END = 240;
 
 // The emphasised word — TEXT.slice(7, 15) === "defining".
 const DEFINING_START = 7;
@@ -91,11 +101,18 @@ const DEFINING_END = 15;
 const COLOR_SNAP_START = 175;
 const COLOR_SNAP_END = 185;
 
+// Phase boundaries, in frames (authored at a fixed 240f/60fps).
+const TYPE_START = 0;
+const SNAP_FRAME = 150;
+const DRIFT_START = 180;
+const DRIFT_END = 240;
+
 const MACRO_SCALE = 5;
 const CURSOR_ANCHOR = 0.75; // fraction of the width the rod is pinned to
 const DRIFT_SCALE = 0.98; // the creeping breath of Phase 3
 const BLINK_PERIOD = 5; // rapid 5-frame cadence during the hold
-const CHAR_FADE = 3; // frames for a character's micro-fade
+const CHAR_REVEAL = 8; // frames a glyph takes to enter
+const CHAR_RISE = 8; // px — review-animations/STANDARDS.md §Stagger
 const SNAP_BLUR_PEAK = 12; // px, at the camera's maximum velocity
 
 /**
@@ -104,11 +121,7 @@ const SNAP_BLUR_PEAK = 12; // px, at the camera's maximum velocity
  */
 const snapScaleAt = (framesPastSnap: number, fps: number) =>
   interpolate(
-    spring({
-      frame: framesPastSnap,
-      fps,
-      config: CAMERA_SPRING.cinematicSnap,
-    }),
+    spring({ frame: framesPastSnap, fps, config: CAMERA_SPRING.cinematicSnap }),
     [0, 1],
     [MACRO_SCALE, 1],
     CLAMP
@@ -132,18 +145,17 @@ const maxSnapDelta = (fps: number) => {
 };
 
 /**
- * Font-aware glyph metrics, gated on `document.fonts.ready` via `delayRender`
- * so advances are measured against Inter 600 and not the fallback face.
+ * Glyph metrics, gated on the display face resolving *and* `document.fonts.ready`
+ * so advances are never measured against a fallback that is about to be swapped.
  *
- * Advances are measured **per character** and summed, rather than measuring the
- * whole string: the micro-fade renders each glyph in its own `<span>`, which
- * suppresses cross-glyph kerning and ligatures. Measuring the same way the text
- * is rendered keeps the rod exactly on the text's trailing edge — measuring the
- * full run would leave the cursor drifting a few px off as the phrase grows.
- * The rendered spans set `fontKerning`/`fontVariantLigatures` to none to match.
+ * Advances are measured per character and summed, and every glyph is then
+ * positioned absolutely from this table. That makes layout independent of
+ * inline text shaping entirely — kerning, ligatures and the fact that a
+ * `transform` is inert on a non-replaced inline box all stop mattering, and the
+ * ember overlay lands glyph-for-glyph on the base run.
  */
 const useTextMetrics = () => {
-  const [handle] = useState(() => delayRender("measure-inter-600"));
+  const [handle] = useState(() => delayRender("measure-display-face"));
   const [prefixes, setPrefixes] = useState<number[] | null>(null);
 
   useEffect(() => {
@@ -152,7 +164,7 @@ const useTextMetrics = () => {
     const build = () => {
       const ctx = document.createElement("canvas").getContext("2d");
       if (!ctx) return;
-      ctx.font = `${FONT_WEIGHT} ${FONT_SIZE}px Inter, sans-serif`;
+      ctx.font = `${FONT_WEIGHT} ${FONT_SIZE}px ${FONT_STACK}`;
       const table: number[] = [0];
       let run = 0;
       for (let i = 0; i < TEXT.length; i++) {
@@ -165,8 +177,7 @@ const useTextMetrics = () => {
       }
     };
 
-    document.fonts
-      .load(`${FONT_WEIGHT} ${FONT_SIZE}px "Inter"`)
+    waitForDisplayFont()
       .then(() => document.fonts.ready)
       .then(build)
       .catch(build);
@@ -179,16 +190,26 @@ const useTextMetrics = () => {
   return prefixes;
 };
 
-/** Shared glyph styling — the ghost layer and the live text must match exactly. */
-const glyphRun: React.CSSProperties = {
+/** Shared glyph styling. Optical sizing per apple-design §15. */
+const glyphBase: React.CSSProperties = {
+  fontFamily: FONT_STACK,
   fontWeight: FONT_WEIGHT,
   fontSize: FONT_SIZE,
   lineHeight: LINE_HEIGHT,
-  letterSpacing: tracking.headline,
   whiteSpace: "pre",
   fontKerning: "none",
   fontVariantLigatures: "none",
+  fontOpticalSizing: "auto",
 };
+
+/** The white display fill — a vertical gradient clipped to the glyph. */
+const clippedFill = (image: string): React.CSSProperties => ({
+  backgroundImage: image,
+  WebkitBackgroundClip: "text",
+  backgroundClip: "text",
+  WebkitTextFillColor: "transparent",
+  color: "transparent",
+});
 
 export const StartsDefining: React.FC = () => {
   const frame = useCurrentFrame();
@@ -196,7 +217,7 @@ export const StartsDefining: React.FC = () => {
   const ms = useMs();
   const prefixes = useTextMetrics();
 
-  // Hold the frame while glyph metrics resolve (delayRender is still open).
+  // Hold the frame while the face and its metrics resolve.
   if (!prefixes) {
     return <AbsoluteFill style={{ background: atmosphere }} />;
   }
@@ -204,9 +225,9 @@ export const StartsDefining: React.FC = () => {
   const fullWidth = prefixes[TEXT.length];
   const lineWidth = fullWidth + GAP + CURSOR_WIDTH;
 
-  /* -- Phase 1: the typewriter -------------------------------------------- */
-  // Linear reveal — human typing has no easing (APPLE_MOTION.md §9). Whole
-  // glyphs only, so the rod lands exactly on the rendered text edge.
+  /* -- Phase 1: the glyph reveal ------------------------------------------- */
+  // The cadence stays linear — glyphs are scheduled at a constant rate and
+  // revealed whole (APPLE_MOTION.md §9). Only each glyph's own entrance eases.
   const perChar = (SNAP_FRAME - TYPE_START) / TEXT.length;
   const typedCount = Math.round(
     interpolate(frame, [TYPE_START, SNAP_FRAME], [0, TEXT.length], {
@@ -216,24 +237,18 @@ export const StartsDefining: React.FC = () => {
   );
   const cursorX = prefixes[typedCount]; // trailing edge of the typed text
 
-  // Each glyph crosses into the count at (i + 0.5) · perChar; the micro-fade
-  // runs from there so a character brightens in rather than popping.
-  const charOpacity = (i: number) =>
-    interpolate(
-      frame,
-      [TYPE_START + (i + 0.5) * perChar, TYPE_START + (i + 0.5) * perChar + CHAR_FADE],
-      [0, 1],
-      { easing: EASE.out, ...CLAMP }
-    );
+  // A glyph crosses into the count at (i + 0.5) · perChar and enters from there.
+  // CHAR_REVEAL slightly exceeds the cadence, so neighbours overlap and the line
+  // reads as a flowing wave rather than a row of discrete pops.
+  const charProgress = (i: number) => {
+    const start = TYPE_START + (i + 0.5) * perChar;
+    return interpolate(frame, [start, start + CHAR_REVEAL], [0, 1], {
+      easing: EASE.out,
+      ...CLAMP,
+    });
+  };
 
   /* -- Camera -------------------------------------------------------------- */
-  // The stage is centred, so at translateX 0 / scale 1 the full phrase reads
-  // dead-centre. During Phase 1 the camera pans so the rod sits on the anchor.
-  //
-  // The anchor is at 75% of the width, not the centre: at 5× only 1080/5 = 216px
-  // of content is on screen, so a centred rod leaves just ~108px — barely two
-  // glyphs — for the text trailing behind it. Pushing the rod right hands the
-  // incoming words ~162px of runway and makes the macro phase readable.
   // The camera scales about its centre, so `lockToCenterX` solves for the centre
   // only. Shifting the lock to the 75% mark is a plain screen-space offset added
   // *after* scaling — feeding the anchor in as the origin instead would inflate
@@ -288,8 +303,6 @@ export const StartsDefining: React.FC = () => {
         SNAP_BLUR_PEAK;
 
   /* -- The rod ------------------------------------------------------------- */
-  // Reveals with the UI ease (it is a rendered interface element), stays solid
-  // through the type, then blinks rapidly once the camera settles.
   const reveal = interpolate(frame, [0, ms(UI_DURATION.dropdown)], [0, 1], {
     easing: UI_EASE.out,
     ...CLAMP,
@@ -298,16 +311,10 @@ export const StartsDefining: React.FC = () => {
   const cursorOpacity = frame >= SNAP_FRAME ? (blinkOn ? 1 : 0) : reveal;
 
   /* -- The "defining" colour snap ------------------------------------------ */
-  // The word turns ember the instant the camera fires, which lands inside the
-  // motion blur's peak so the switch reads as part of the impact rather than a
-  // colour pop. It then settles to system gray as the spring's last kinetic
-  // energy dies.
-  //
-  // Gray is stacked *over* a fully opaque ember rather than the two being
-  // cross-dissolved in opposite directions: two half-opaque copies of the same
-  // glyphs composite to ~0.75 alpha at the midpoint, letting the void show
-  // through and dimming the word mid-transition. Holding ember at 1 and fading
-  // gray in on top keeps the word solid the whole way across.
+  // Gray is stacked over a fully opaque ember rather than the two being
+  // dissolved in opposite directions: two half-opaque copies of the same glyphs
+  // composite to ~0.75 alpha at the midpoint, letting the void through and
+  // dimming the word. Holding ember at 1 and fading gray in keeps it solid.
   const emphasised = frame >= SNAP_FRAME;
   const settle = interpolate(frame, [COLOR_SNAP_START, COLOR_SNAP_END], [0, 1], {
     easing: EASE.inOut,
@@ -316,9 +323,12 @@ export const StartsDefining: React.FC = () => {
 
   const glyphs = TEXT.split("");
   const isEmphasised = (i: number) => i >= DEFINING_START && i < DEFINING_END;
+  const emphasisedGlyphs = glyphs
+    .map((c, i) => ({ c, i }))
+    .filter(({ i }) => isEmphasised(i));
 
   return (
-    <AbsoluteFill style={{ background: atmosphere, fontFamily: fonts.display }}>
+    <AbsoluteFill style={{ background: atmosphere, fontFamily: FONT_STACK }}>
       {/* Camera viewport — translate then scale, per APPLE_MOTION.md §11 */}
       <AbsoluteFill
         style={{
@@ -338,14 +348,15 @@ export const StartsDefining: React.FC = () => {
           }}
         >
           {/* Optical anchor — a ghosted, heavily blurred copy of the phrase that
-              gives the 82px type visual mass in the void once the camera pulls
-              out. Static blur; only its transform and opacity are animated. */}
+              gives the display type visual mass in the void once the camera
+              pulls out. Static blur; only transform and opacity animate. */}
           <span
             style={{
-              ...glyphRun,
+              ...glyphBase,
               position: "absolute",
               left: 0,
               top: "50%",
+              letterSpacing: `${LETTER_SPACING}px`,
               transform: "translateY(-50%) scale(1.2)",
               color: "#ffffff",
               opacity: 0.05,
@@ -364,78 +375,79 @@ export const StartsDefining: React.FC = () => {
               filter: snapBlur > 0.01 ? `blur(${snapBlur.toFixed(2)}px)` : undefined,
             }}
           >
-            {/* Typed text — per-glyph micro-fade over the clipped gradient fill.
-                The gradient is clipped on each glyph rather than on the run: a
-                child with opacity < 1 gets its own compositing layer, which the
-                parent's background-clip:text mask does not reach, so the glyph
-                would paint with its inherited transparent fill and vanish until
-                opacity hit exactly 1 — turning the fade into a delayed pop.
-                The fill is purely vertical and every glyph shares the line box,
-                so per-glyph clipping is visually identical to clipping the run. */}
+            {/* Text layer — ambient glow plus the cast shadow. Every glyph is
+                absolutely placed from the measured prefix table. */}
             <div
               style={{
-                ...glyphRun,
                 position: "absolute",
                 left: 0,
                 top: "50%",
                 width: fullWidth,
+                height: CURSOR_HEIGHT,
                 transform: "translateY(-50%)",
                 filter: `${textGlow} ${keynoteShadow}`,
               }}
             >
-              <span>
-                {glyphs.map((c, i) => (
+              {glyphs.map((c, i) => {
+                const p = charProgress(i);
+                return (
                   <span
                     key={i}
                     style={{
+                      ...glyphBase,
+                      ...clippedFill(textGradient),
+                      position: "absolute",
+                      left: prefixes[i],
+                      top: 0,
                       // The base run yields "defining" to the colour layers the
                       // moment the camera fires.
-                      opacity:
-                        emphasised && isEmphasised(i) ? 0 : charOpacity(i),
-                      backgroundImage: textGradient,
-                      WebkitBackgroundClip: "text",
-                      backgroundClip: "text",
-                      WebkitTextFillColor: "transparent",
-                      color: "transparent",
+                      opacity: emphasised && isEmphasised(i) ? 0 : p,
+                      transform: `translateY(${interpolate(
+                        p,
+                        [0, 1],
+                        [CHAR_RISE, 0]
+                      ).toFixed(3)}px)`,
                     }}
                   >
                     {c}
                   </span>
-                ))}
-              </span>
+                );
+              })}
 
-              {/* "defining", ember — held solid under the settling gray. Sits at
-                  the exact prefix offset of the word, and because kerning and
-                  ligatures are off it lands glyph-for-glyph on the base run. */}
-              <span
-                style={{
-                  position: "absolute",
-                  left: prefixes[DEFINING_START],
-                  top: 0,
-                  opacity: emphasised ? 1 : 0,
-                  backgroundImage: emberGradient,
-                  WebkitBackgroundClip: "text",
-                  backgroundClip: "text",
-                  WebkitTextFillColor: "transparent",
-                  color: "transparent",
-                }}
-              >
-                {TEXT.slice(DEFINING_START, DEFINING_END)}
-              </span>
+              {/* "defining", ember — held solid beneath the settling gray. */}
+              {emphasisedGlyphs.map(({ c, i }) => (
+                <span
+                  key={`ember-${i}`}
+                  style={{
+                    ...glyphBase,
+                    ...clippedFill(emberGradient),
+                    position: "absolute",
+                    left: prefixes[i],
+                    top: 0,
+                    opacity: emphasised ? 1 : 0,
+                  }}
+                >
+                  {c}
+                </span>
+              ))}
 
               {/* "defining", system gray — fades in over the ember as the
                   spring's last kinetic energy dies. */}
-              <span
-                style={{
-                  position: "absolute",
-                  left: prefixes[DEFINING_START],
-                  top: 0,
-                  opacity: emphasised ? settle : 0,
-                  color: systemGray,
-                }}
-              >
-                {TEXT.slice(DEFINING_START, DEFINING_END)}
-              </span>
+              {emphasisedGlyphs.map(({ c, i }) => (
+                <span
+                  key={`gray-${i}`}
+                  style={{
+                    ...glyphBase,
+                    position: "absolute",
+                    left: prefixes[i],
+                    top: 0,
+                    color: systemGray,
+                    opacity: emphasised ? settle : 0,
+                  }}
+                >
+                  {c}
+                </span>
+              ))}
             </div>
 
             {/* The hero — a soft, illuminated neon pill trailing the text */}
