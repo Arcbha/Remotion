@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   AbsoluteFill,
   continueRender,
@@ -9,59 +9,74 @@ import {
   useVideoConfig,
 } from "remotion";
 import "@fontsource/inter/600.css";
+import {
+  CAMERA_SPRING,
+  CLAMP,
+  EASE,
+  UI_DURATION,
+  UI_EASE,
+  cameraTransform,
+  lockToCenterX,
+  useMs,
+} from "./motion";
+import {
+  atmosphere,
+  cinematic,
+  fonts,
+  neonBloom,
+  textGlow,
+  textGradient,
+  tracking,
+  typeScale,
+} from "./theme";
 
 /**
  * "starts defining you." — cinematic dark-mode typewriter with a macro camera.
- * 9:16 (1080x1920), 60fps, 4.0s (240 frames).
+ * 9:16 (1080×1920), 60fps, 4.0s (240 frames).
  *
- * Colors, glows and the background gradient are lifted directly from the neon-rod
- * reference stills: a deep void up top bleeding into a hazy blue floor, a subtle
- * internal text gradient, and an ambient blue-white bleed off the glyphs.
+ * Three phases:
+ *   1 · 0–150   Camera holds at 5× macro. The phrase types out and the camera
+ *               pans left so the neon rod stays locked to the exact centre of
+ *               the viewport (`lockToCenterX`).
+ *   2 · 150     Violent snap — `CAMERA_SPRING.cinematicSnap` slams scale 5 → 1
+ *               and translateX → 0.
+ *   3 · 150–240 Static hold at scale 1, rod blinking on a 5-frame cadence.
  *
- * The camera lives at scale 5 while the phrase types, panning left so the glowing
- * cursor stays pinned to the exact center of the viewport. At frame 150 a violent
- * spring slams scale 5 -> 1 and translateX -> 0, revealing the full centered
- * phrase, which then holds while the cursor blinks on a rapid 5-frame cadence.
+ * All easing, springs and durations come from `src/motion.ts`; all colour,
+ * gradient and glow tokens from `src/theme.ts`. No values are authored here.
+ *
+ * Deviations from APPLE_MOTION.md (§5):
+ * - The camera snap uses the deliberately underdamped `CAMERA_SPRING.cinematicSnap`
+ *   (ζ 0.50) rather than a HIG spring, which never overshoots. This is the
+ *   sanctioned house extension for camera moves and is the source of the slam.
+ * - That spring peaks at 1.165, so across the 5→1 scale range its raw overshoot
+ *   would undershoot to scale 0.34 — the phrase visibly shrinking to a third
+ *   before recovering. `CLAMP` is therefore spread into the camera interpolations
+ *   (the repo convention): the slam keeps the spring's violent rise and stops
+ *   dead at its target instead of collapsing past it.
  */
 
 const TEXT = "starts defining you.";
 
-// Typography — locked per spec. 82px keeps the phrase on one line inside 1080px.
-const FONT_SIZE = 82;
-const LINE_HEIGHT = 1.0;
-const LETTER_SPACING = -1.5; // px, between/after every glyph
+const { fontSize: FONT_SIZE, fontWeight: FONT_WEIGHT, lineHeight: LINE_HEIGHT } =
+  typeScale.headline;
+const LETTER_SPACING = parseFloat(tracking.headline); // −1.5px, applied per glyph
+
 const CURSOR_HEIGHT = FONT_SIZE * LINE_HEIGHT;
 const CURSOR_WIDTH = 6;
-const GAP = 14; // space between the text's trailing edge and the rod
+const GAP = 14; // gap between the text's trailing edge and the rod
 
-const FONT_FAMILY = 'Inter, system-ui, -apple-system, sans-serif';
-
-// Timeline (frames @ 60fps)
-const TYPE_START = 30; // 0.5s
-const TYPE_END = 150; // 2.5s — Phase 1 ends
-const SNAP_FRAME = 150; // Phase 2 trigger
-
+// Phase boundaries, in frames (this composition is authored at a fixed 240f/60fps).
+const TYPE_START = 0;
+const SNAP_FRAME = 150;
 const MACRO_SCALE = 5;
-
-// Vision-extracted background — deep void -> vibrant hazy blue floor, plus a
-// soft central bloom where the rod glows.
-const BACKGROUND =
-  "radial-gradient(65% 45% at 50% 60%, rgba(42,112,222,0.35), transparent 72%)," +
-  "linear-gradient(180deg, #010208 0%, #04091a 42%, #0d3172 74%, #2f6ac2 90%, #6ea6dd 100%)";
-
-// Vision-extracted internal text gradient (brighter at the top).
-const TEXT_GRADIENT =
-  "linear-gradient(180deg, #ffffff 0%, #eaf1fb 52%, #cdddf5 100%)";
-
-// Vision-extracted ambient neon bleed off the glyphs.
-const TEXT_GLOW =
-  "drop-shadow(0 0 18px rgba(150,190,255,0.45)) drop-shadow(0 0 42px rgba(60,120,230,0.30))";
+const BLINK_PERIOD = 5; // rapid 5-frame cadence during the hold
 
 /**
- * Font-aware width measurement. Runs once the Inter 600 face is loaded so glyph
- * advances are exact, then builds a cumulative prefix-width table: prefix[k] is
- * the rendered width of the first k characters, including CSS letter-spacing
- * (which the browser applies after every glyph, hence LETTER_SPACING * k).
+ * Font-aware glyph metrics. Gated on `document.fonts.ready` via `delayRender`
+ * so the advances are measured against Inter 600 and not the fallback face.
+ * Builds a cumulative prefix table: `prefix[k]` is the rendered width of the
+ * first k characters, including the letter-spacing the browser adds after each.
  */
 const useTextMetrics = () => {
   const [handle] = useState(() => delayRender("measure-inter-600"));
@@ -69,15 +84,14 @@ const useTextMetrics = () => {
 
   useEffect(() => {
     let cancelled = false;
+
     const build = () => {
-      const canvas = document.createElement("canvas");
-      const ctx = canvas.getContext("2d");
+      const ctx = document.createElement("canvas").getContext("2d");
       if (!ctx) return;
-      ctx.font = `600 ${FONT_SIZE}px Inter, sans-serif`;
+      ctx.font = `${FONT_WEIGHT} ${FONT_SIZE}px Inter, sans-serif`;
       const table: number[] = [];
       for (let k = 0; k <= TEXT.length; k++) {
-        const slice = TEXT.slice(0, k);
-        table.push(ctx.measureText(slice).width + LETTER_SPACING * k);
+        table.push(ctx.measureText(TEXT.slice(0, k)).width + LETTER_SPACING * k);
       }
       if (!cancelled) {
         setPrefixes(table);
@@ -85,15 +99,12 @@ const useTextMetrics = () => {
       }
     };
 
-    if (document.fonts && document.fonts.load) {
-      document.fonts
-        .load(`600 ${FONT_SIZE}px "Inter"`)
-        .then(() => document.fonts.ready)
-        .then(build)
-        .catch(build);
-    } else {
-      build();
-    }
+    document.fonts
+      .load(`${FONT_WEIGHT} ${FONT_SIZE}px "Inter"`)
+      .then(() => document.fonts.ready)
+      .then(build)
+      .catch(build);
+
     return () => {
       cancelled = true;
     };
@@ -104,69 +115,77 @@ const useTextMetrics = () => {
 
 export const StartsDefining: React.FC = () => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
+  const { fps, width } = useVideoConfig();
+  const ms = useMs();
   const prefixes = useTextMetrics();
 
-  // Hold the frame until glyph metrics are ready (delayRender is active).
+  // Hold the frame while glyph metrics resolve (delayRender is still open).
   if (!prefixes) {
-    return <AbsoluteFill style={{ background: BACKGROUND }} />;
+    return <AbsoluteFill style={{ background: atmosphere }} />;
   }
 
   const fullWidth = prefixes[TEXT.length];
   const lineWidth = fullWidth + GAP + CURSOR_WIDTH;
 
-  // Discrete typewriter: whole glyphs only, so the cursor sits exactly on the
-  // rendered text edge and the pan advances in glyph steps.
+  /* -- Phase 1: the typewriter ------------------------------------------- */
+  // Linear reveal — human typing has no easing (APPLE_MOTION.md §9). Whole
+  // glyphs only, so the rod lands exactly on the rendered text edge.
   const typedCount = Math.round(
-    interpolate(frame, [TYPE_START, TYPE_END], [0, TEXT.length], {
-      extrapolateLeft: "clamp",
-      extrapolateRight: "clamp",
+    interpolate(frame, [TYPE_START, SNAP_FRAME], [0, TEXT.length], {
+      easing: EASE.linear,
+      ...CLAMP,
     })
   );
   const typed = TEXT.slice(0, typedCount);
   const cursorX = prefixes[typedCount]; // trailing edge of the typed text
 
-  // --- Camera transform -----------------------------------------------------
-  // The line is centered in the viewport, so at translateX 0 / scale 1 the full
-  // phrase reads dead-center (Phase 3). During Phase 1 we translate (in screen
-  // px, applied after scale) so the cursor's center maps onto 540:
-  //   screen_x = 540 + (content_x - 540)*S + TX  ->  TX = -(content_x - 540)*S
-  // The cursor center in content space, relative to viewport center, resolves to
-  //   (cursorX + GAP/2 - fullWidth/2), giving the pan below.
-  const macroTX =
-    MACRO_SCALE * (fullWidth / 2 - GAP / 2 - cursorX);
+  /* -- Camera ------------------------------------------------------------- */
+  // The stage is centred, so at translateX 0 / scale 1 the full phrase reads
+  // dead-centre (Phase 3). During Phase 1 the camera pans so the rod's centre
+  // maps onto the viewport centre.
+  const stageLeft = width / 2 - lineWidth / 2;
+  const cursorCentre = stageLeft + cursorX + GAP + CURSOR_WIDTH / 2;
+  const macroX = lockToCenterX(cursorCentre, width / 2, MACRO_SCALE);
 
-  // --- Phase 2: the violent snap (spring) -----------------------------------
-  // High stiffness / low damping for a punchy, slightly-overshooting slam.
+  // Phase 2: the violent snap. See the deviation note above for why this is
+  // clamped — un-clamped, the spring's 16.5% overshoot collapses scale to 0.34.
   const snap = spring({
     frame: frame - SNAP_FRAME,
     fps,
-    config: { stiffness: 220, damping: 14, mass: 0.9 },
+    config: CAMERA_SPRING.cinematicSnap,
   });
 
-  const scale = interpolate(snap, [0, 1], [MACRO_SCALE, 1]);
-  const macroTXAtSnap =
-    MACRO_SCALE * (fullWidth / 2 - GAP / 2 - fullWidth); // typedCount === len
+  const scale = interpolate(snap, [0, 1], [MACRO_SCALE, 1], CLAMP);
+
+  // At the snap the phrase is fully typed, so the pan starts from its end position.
+  const cursorCentreAtSnap = stageLeft + fullWidth + GAP + CURSOR_WIDTH / 2;
+  const macroXAtSnap = lockToCenterX(cursorCentreAtSnap, width / 2, MACRO_SCALE);
   const translateX =
     frame < SNAP_FRAME
-      ? macroTX
-      : interpolate(snap, [0, 1], [macroTXAtSnap, 0]);
+      ? macroX
+      : interpolate(snap, [0, 1], [macroXAtSnap, 0], CLAMP);
 
-  // --- Cursor visibility ----------------------------------------------------
-  // Solid while typing; rapid 5-frame on/off cadence once the snap fires.
-  const cursorOpacity =
-    frame < SNAP_FRAME ? 1 : Math.floor((frame - SNAP_FRAME) / 5) % 2 === 0 ? 1 : 0;
+  /* -- The rod ------------------------------------------------------------ */
+  // Reveals with the UI ease (it is a rendered interface element), stays solid
+  // through the type, then blinks rapidly once the camera settles.
+  const reveal = interpolate(frame, [0, ms(UI_DURATION.dropdown)], [0, 1], {
+    easing: UI_EASE.out,
+    ...CLAMP,
+  });
+  const blinking = frame >= SNAP_FRAME;
+  const blinkOn = Math.floor((frame - SNAP_FRAME) / BLINK_PERIOD) % 2 === 0;
+  const cursorOpacity = blinking ? (blinkOn ? 1 : 0) : reveal;
 
   return (
-    <AbsoluteFill style={{ background: BACKGROUND, fontFamily: FONT_FAMILY }}>
-      {/* Camera viewport */}
+    <AbsoluteFill style={{ background: atmosphere, fontFamily: fonts.display }}>
+      {/* Camera viewport — translate then scale, per APPLE_MOTION.md §11 */}
       <AbsoluteFill
         style={{
-          transform: `translateX(${translateX}px) scale(${scale})`,
+          transform: cameraTransform({ x: translateX, scale }),
           transformOrigin: "center center",
         }}
       >
-        {/* The full-line stage, centered in the viewport */}
+        {/* The full-line stage, centred in the viewport */}
         <div
           style={{
             position: "absolute",
@@ -177,25 +196,24 @@ export const StartsDefining: React.FC = () => {
             transform: "translate(-50%, -50%)",
           }}
         >
-          {/* Typed text — left-anchored, clipped internal gradient + neon bleed */}
+          {/* Typed text — clipped internal gradient + ambient neon bleed */}
           <span
             style={{
               position: "absolute",
               left: 0,
               top: "50%",
               transform: "translateY(-50%)",
-              fontFamily: FONT_FAMILY,
-              fontWeight: 600,
+              fontWeight: FONT_WEIGHT,
               fontSize: FONT_SIZE,
               lineHeight: LINE_HEIGHT,
-              letterSpacing: `${LETTER_SPACING}px`,
+              letterSpacing: tracking.headline,
               whiteSpace: "pre",
-              backgroundImage: TEXT_GRADIENT,
+              backgroundImage: textGradient,
               WebkitBackgroundClip: "text",
               backgroundClip: "text",
               WebkitTextFillColor: "transparent",
               color: "transparent",
-              filter: TEXT_GLOW,
+              filter: textGlow,
             }}
           >
             {typed}
@@ -211,10 +229,9 @@ export const StartsDefining: React.FC = () => {
               width: CURSOR_WIDTH,
               height: CURSOR_HEIGHT,
               borderRadius: 2,
-              backgroundColor: "#007fff",
+              backgroundColor: cinematic.neon,
               opacity: cursorOpacity,
-              boxShadow:
-                "0 0 12px 2px rgba(0, 127, 255, 0.8), 0 0 24px 8px rgba(0, 127, 255, 0.4)",
+              boxShadow: neonBloom,
             }}
           />
         </div>
