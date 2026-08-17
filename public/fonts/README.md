@@ -2,24 +2,33 @@
 
 ## SF Pro Display
 
-`src/fonts.ts` loads **`SFPRODISPLAYBOLD.OTF`** from this directory via
-`staticFile("fonts/SFPRODISPLAYBOLD.OTF")`.
+Self-hosted and loaded by [`src/fonts.ts`](../../src/fonts.ts) through
+`staticFile()` + the CSS Font Loading API, gated with `delayRender` so no frame
+is measured or painted against a fallback.
 
-The file is **not committed** — SF Pro is a licensed Apple asset and is not
-redistributable. Download it from
-<https://developer.apple.com/fonts/> and place it here:
+| File | Registered weight |
+|---|---|
+| `SFPRODISPLAYREGULAR.OTF` | 400 |
+| `SFPRODISPLAYMEDIUM.OTF` | 500 |
+| `SFPRODISPLAYBOLD.OTF` | 700 |
 
-```
-public/fonts/SFPRODISPLAYBOLD.OTF
-```
+Each face is registered at its **true** weight so the browser selects rather
+than synthesises — a faux-bold is exactly the fake thickening this design
+language rejects.
 
-No code change is needed; the next render picks it up.
+SF Pro Display ships no upright Semibold, so display headlines are set in
+**Bold (700)** via `DISPLAY_WEIGHT`.
 
-### Until then
+The italic cuts are not bundled; nothing in the project sets italic type. They
+remain on `claude/remotion-motion-graphics-2ua2qf` under `public/fontss/` if
+ever needed.
 
-The load fails softly and the family stack in `src/fonts.ts` falls through to
-**Inter** (the substitute documented in `APPLE_MOTION.md` §9). Renders keep
-working and stay on-brand rather than dropping to an arbitrary system sans.
+`-apple-system` resolves to SF Pro natively on Apple hardware, but these
+compositions render in headless Chromium on Linux where it does not exist —
+hence the bundled faces, which keep renders deterministic.
 
-Remotion serves static assets from `public/`, which is why the font lives here
-rather than in a top-level `fonts/`.
+## Licensing
+
+SF Pro is an Apple asset governed by Apple's font licence
+(<https://developer.apple.com/fonts/>). It is committed here for rendering only;
+check the licence before redistributing this repository publicly.

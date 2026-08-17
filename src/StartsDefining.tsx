@@ -8,7 +8,6 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
-import "@fontsource/inter/600.css";
 import {
   CAMERA_SPRING,
   CLAMP,

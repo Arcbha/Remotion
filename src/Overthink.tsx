@@ -6,9 +6,6 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
-import "@fontsource/inter/500.css";
-import "@fontsource/inter/600.css";
-import "@fontsource/inter/700.css";
 import { Cursor } from "./components/Cursor";
 import { colors, fonts, inkGradient, tracking } from "./theme";
 
