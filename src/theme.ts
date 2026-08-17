@@ -4,6 +4,8 @@
  * and the signature chromatic-blue "primary ink" gradient used for emphasis.
  */
 
+import { DISPLAY_WEIGHT, FONT_STACK } from "./fonts";
+
 export const colors = {
   ink: "#1d1d1f", // Primary Ink — headlines, body
   midGray: "#707070", // Secondary text, muted labels
@@ -83,7 +85,7 @@ export const textGlow =
  * Apple Ember — the keynote's warm accent, spent on a single emphasised word.
  * Vertical only, so it reads as one lit surface rather than a colour sweep.
  */
-export const emberGradient = "linear-gradient(180deg, #ff9500 0%, #ff5e00 100%)";
+export const emberGradient = "linear-gradient(180deg, #ff9500 0%, #ff7a00 100%)";
 
 /** Apple system gray — where an emphasised word settles once its beat is spent. */
 export const systemGray = "#86868b";
@@ -113,11 +115,11 @@ export const neonBloom =
 
 export const fonts = {
   /**
-   * Light-mode compositions. The dark cinematic pieces resolve their family
-   * from `src/fonts.ts` (`FONT_STACK`), which puts SF Pro Display first and
-   * keeps Inter as the documented fallback.
+   * Re-exported from `src/fonts.ts`, which self-hosts the SF Pro Display
+   * uprights. Every composition resolves the same stack — there is no second
+   * family in the project.
    */
-  display: "Inter, system-ui, -apple-system, sans-serif",
+  display: FONT_STACK,
 };
 
 // Tight negative tracking on huge type is the signature Apple headline feel.
@@ -143,7 +145,11 @@ export const tracking = {
 export const typeScale = {
   headline: {
     fontSize: 82,
-    fontWeight: 600,
+    // SF Pro Display ships no upright Semibold — the bundled uprights are
+    // Regular (400), Medium (500) and Bold (700) — so display headlines are set
+    // in Bold. Requesting the unavailable 600 would make the browser pick 700
+    // anyway; naming it keeps the intent explicit and avoids any faux-bold.
+    fontWeight: DISPLAY_WEIGHT,
     lineHeight: 1.05,
     trackingEm: -0.02,
   },
