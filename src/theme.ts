@@ -67,6 +67,31 @@ export const subjectBloom =
 export const atmosphere = `${subjectBloom}, ${floorGlow}, ${voidGradient}`;
 
 /**
+ * An inert, accent-free ground for scenes with no light source in them.
+ *
+ * Composed only from the void palette: `abyss` lifts the top fractionally and
+ * flattens into pure `void` across the lower half. Two reasons for the shape —
+ * the ramp is kept short so its per-level step stays tight (a long, shallow
+ * ramp is what bands at 1080p), and the flat lower region is where the densest,
+ * dimmest type lands, so that text sits on the darkest ground available and
+ * keeps its contrast headroom. Flat near-black also encodes cleanly in H.264,
+ * where mosquito noise collects around busy, high-contrast regions.
+ *
+ * Deliberately carries no bloom, floor glow or accent — see `atmosphere` for
+ * the lit variant.
+ */
+export const inertVoid =
+  `linear-gradient(180deg, ${cinematic.abyss} 0%, ${cinematic.void} 45%, ` +
+  `${cinematic.void} 100%)`;
+
+/**
+ * Full-intensity display ink on the dark field — the same white that opens
+ * `textGradient`, named so type can be interpolated between it and
+ * {@link systemGray} without a literal in the composition.
+ */
+export const displayInk = "#ffffff";
+
+/**
  * The subtle internal fill for display type on the dark field — barely
  * perceptible cooling toward the baseline, never a rainbow. Pair with
  * `-webkit-background-clip: text` + transparent fill.
@@ -142,6 +167,21 @@ export const tracking = {
  * −1.64px, satisfying APPLE_MOTION.md §9's "negative tracking that scales with
  * size" law for display ≥64px.
  */
+/**
+ * The APPLE_MOTION.md §9 display ladder for the 1080×1920 vertical canvas, as
+ * discrete steps. `typeScale.headline` below is the large-headline step the
+ * hero compositions are set in; this is the full ladder, for scenes that need
+ * to travel between steps rather than sit on one.
+ */
+export const displayScale = {
+  hero: 96,
+  headlineLarge: 82,
+  headline: 64,
+  subhead: 48,
+  body: 34,
+  caption: 24,
+} as const;
+
 export const typeScale = {
   headline: {
     fontSize: 82,
