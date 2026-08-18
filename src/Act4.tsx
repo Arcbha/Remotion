@@ -47,17 +47,26 @@ import {
  *   imported from `src/motion.ts` as specified. Note this departs from
  *   CLAUDE.md's "type reveals → cinematic `EASE`" default; the brief names
  *   `UI_EASE` explicitly, and CLAUDE.md permits an explicit override.
- * - **Entrance geometry** opacity 0→1 with `translateY(8px)→0`, verbatim from
- *   `review-animations/STANDARDS.md` §Stagger, plus `scale(0.97)→1`. Nothing
+ * - **Entrance geometry** opacity 0→1 with `translateY(−8px)→0` over 200ms
+ *   (`DURATION.snap`), plus `scale(0.97)→1`. The 8px offset is
+ *   `review-animations/STANDARDS.md` §Stagger; its sign is inverted so a copy
+ *   is pulled down out of the row above rather than rising from below. Nothing
  *   pops from nothing — `animate` §4 and `improve-animations/AUDIT.md` both
  *   require `scale(0.9–0.97)` + `opacity: 0` rather than a 0-frame appearance.
  *   In `animation-vocabulary` terms this is *a stagger of scale-in entrances*.
  * - **Phase cadence** the `DURATION` scale walked downward —
  *   slower→slow→default→snap→fast — so each wave lands sooner than the last.
- * - **Row cadence** `STAGGER.listRow` (25ms) capped at 8 via `staggerFrames`,
- *   per APPLE_MOTION.md §8's "past ~8 items a stagger reads as lag".
- * - **Type** SF Pro Display Bold at the §9 display scale, decaying from the
- *   82px Headline down to the 24px Caption floor — §9 sets no smaller step.
+ * - **Row cadence** `STAGGER.gridCard` (30ms), applied to *every* child of a
+ *   batch. This deliberately drops APPLE_MOTION.md §8's cap-at-8: with the cap,
+ *   the eight tail rows of a 16-row batch share one delay and land together,
+ *   which is the "everything-at-once" entrance `review-animations` blocks. The
+ *   cap exists so a long list does not read as lag; here the overlapping waves
+ *   are the subject, so the whole batch cascades.
+ * - **Type** SF Pro Display Bold on the §9 ladder, decaying from the 96px Hero
+ *   step down to the 24px Caption floor — §9 sets no smaller step. Row pitch is
+ *   *solved* so the stack spans the safe area exactly, which lands it at 0.898:
+ *   below the measured 0.9219em ink height of the phrase, so descenders graze
+ *   the ascenders beneath them and the wall closes up with no visible gaps.
  * - **Tracking** the §9 tracking law applied *per row*: −0.015em at display
  *   sizes, −0.008em at subhead, 0 at body and below. `apple-design` §15 is
  *   explicit that "a fixed `letter-spacing` is wrong somewhere" — carrying the
@@ -85,16 +94,15 @@ const ROWS = 32; // 2^5, the final phase
 const PHASES = 6; // 1 → 2 → 4 → 8 → 16 → 32
 
 /**
- * §9 display-ladder endpoints: Headline down to the Caption floor.
+ * §9 display-ladder endpoints: Hero display down to the Caption floor.
  *
- * The seed sits on `headline` (64) rather than a larger step because the stack
- * has to clear its own descenders. "not enough" carries a `g`, whose descender
- * sets the real row height at ~0.98em; with 32 rows spanning the safe area, a
- * seed of 82 leaves 0.2px between one row's descender and the next row's
- * ascenders and they visibly merge, while 96 overlaps outright. 64 is the
- * largest ladder step that keeps every row a separate, readable line.
+ * The seed sits on `hero` (96) because the row pitch is *solved*, not set — see
+ * {@link PITCH}. Filling the safe area with 32 rows decaying 96 → 24 forces a
+ * pitch of 0.898, which is the crushed leading this act needs. A smaller seed
+ * leaves the same 32 rows spread over the same height, i.e. looser: 82 solves
+ * to 0.989 and 64 to 1.147, both of which read as a list rather than a wall.
  */
-const SEED_SIZE = displayScale.headline; // 64
+const SEED_SIZE = displayScale.hero; // 96
 const FLOOR_SIZE = displayScale.caption; // 24 — §9 sets no smaller step
 
 /** Seed sits high in the frame; the stack grows down to the §13 safe margin. */
@@ -151,7 +159,7 @@ const PHASE_GAPS_MS = [
  */
 const ESTABLISH_MS = PHASE_GAPS_MS.reduce((a, b) => a + b, 0);
 
-const ENTER_MS = DURATION.default;
+const ENTER_MS = DURATION.snap; // 200ms
 const SETTLE_MS = 5000;
 
 const phaseStartMs = (() => {
@@ -165,15 +173,20 @@ const phaseStartMs = (() => {
 /** The frame the last row of the last phase finishes arriving. */
 export const wallCompleteMs =
   phaseStartMs[PHASES - 1] +
-  Math.min(ROWS / 2 - 1, 8) * STAGGER.listRow +
+  (ROWS / 2 - 1) * STAGGER.gridCard +
   ENTER_MS;
 
 export const ACT4_DURATION_MS = wallCompleteMs + SETTLE_MS;
 
 /* -- Entrance -------------------------------------------------------------- */
 
-/** review-animations/STANDARDS.md §Stagger: `translateY(8px)` + opacity. */
-const RISE_PX = 8;
+/**
+ * Entrance offset. Negative: a new copy is *pulled down out of* the row above
+ * it rather than rising from below, so the wall reads as growing downward under
+ * its own weight. `review-animations/STANDARDS.md` §Stagger specifies an 8px
+ * offset; only its sign is inverted here to match the direction of growth.
+ */
+const RISE_PX = -8;
 /** `animate` §4: start from 0.9–0.97, never 0. */
 const ENTER_SCALE = 0.97;
 
@@ -247,7 +260,7 @@ export const Act4: React.FC = () => {
           const indexInPhase = phase === 0 ? 0 : row - Math.pow(2, phase - 1);
           const startF =
             ms(phaseStartMs[phase]) +
-            staggerFrames(indexInPhase, STAGGER.listRow, fps);
+            staggerFrames(indexInPhase, STAGGER.gridCard, fps, ROWS);
 
           const p = interpolate(frame, [startF, startF + enterFrames], [0, 1], {
             easing: UI_EASE.out,
