@@ -66,15 +66,8 @@ const TEXT = "A prison needs Iron";
  * SF Pro Display uprights (400 / 500 / 700) Medium is the closest match.
  * Tracking follows APPLE_MOTION.md §9's law for display sizes rather than the
  * reference's looser geometric-sans fit — the brief asked for our type style.
- *
- * Size is set by the reframe, not copied. The reference's line is 28% of its
- * 1920-wide frame; the same line in a 1080-wide frame is proportionally far
- * wider, and at the 82px step it runs 60% of the width, so the 2.8em slide-in
- * below starts off the left edge and the first glyphs are clipped by the frame
- * rather than by the wipe. The 64px step puts the line at 47% — still more
- * prominent than the reference — and leaves the whole slide on-frame.
  */
-const FONT_SIZE = displayScale.headline; // 64
+const FONT_SIZE = displayScale.headlineLarge; // 82
 const FONT_WEIGHT = 500;
 const TRACKING_EM = -0.015;
 
@@ -86,6 +79,19 @@ const TRACKING_EM = -0.015;
 const SLIDE_EM = 2.8;
 const FALL_EM = 1.73;
 
+/**
+ * APPLE_MOTION.md §2 horizontal safe margin. The slide is clamped to it.
+ *
+ * The reframe cannot preserve both the reference's type proportion and its
+ * slide proportion. Its line is 28% of a 1920-wide frame; at the 82px step the
+ * same line is 60% of a 1080-wide frame, which leaves only ~216px of margin —
+ * less than the 2.8em (230px) the reference slides. Unclamped, the line starts
+ * off the left edge and the opening glyphs get cut by the frame instead of by
+ * the wipe, which reads as a bug rather than as motion. The clamp keeps the
+ * reference's proportion wherever it fits and gives up only the excess.
+ */
+const SAFE_MARGIN = 64;
+
 // Measured phase boundaries, in frames at 60fps.
 const REVEAL_START = -3; // the reference is already 7.4% revealed on frame 0
 const REVEAL_END = 36;
@@ -94,24 +100,40 @@ const EXIT_END = 122;
 
 export const PRISON_DURATION_FRAMES = EXIT_END;
 
-const useDisplayFont = () => {
+/**
+ * Resolves the display face, then measures the rendered line. The width is
+ * measured rather than assumed so the safe-area clamp below re-derives itself
+ * if the size, weight or face ever changes.
+ */
+const useLineWidth = () => {
   const [handle] = useState(() => delayRender("prison-display-face"));
-  const [ready, setReady] = useState(false);
+  const [width, setWidth] = useState<number | null>(null);
   useEffect(() => {
+    const measure = () => {
+      const ctx = document.createElement("canvas").getContext("2d");
+      let w = 0;
+      if (ctx) {
+        ctx.font = `${FONT_WEIGHT} ${FONT_SIZE}px ${FONT_STACK}`;
+        w = ctx.measureText(TEXT).width + TRACKING_EM * FONT_SIZE * TEXT.length;
+      }
+      setWidth(w);
+      continueRender(handle);
+    };
     waitForDisplayFont()
       .then(() => document.fonts.ready)
-      .then(() => { setReady(true); continueRender(handle); })
-      .catch(() => { setReady(true); continueRender(handle); });
+      .then(measure)
+      .catch(measure);
   }, [handle]);
-  return ready;
+  return width;
 };
 
 export const PrisonNeedsIron: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const ready = useDisplayFont();
+  const lineWidth = useLineWidth();
 
-  if (!ready) return <AbsoluteFill style={{ background: cinematic.void }} />;
+  if (lineWidth === null)
+    return <AbsoluteFill style={{ background: cinematic.void }} />;
 
   // Reveal: a constant-rate wipe front. Right inset retreats 100% → 0%.
   const reveal = interpolate(frame, [REVEAL_START, REVEAL_END], [0, 1], {
@@ -126,9 +148,13 @@ export const PrisonNeedsIron: React.FC = () => {
   });
 
   // The block enters offset to the left and settles on a critically damped
-  // spring — matching the reference's overshoot-free exponential decay.
+  // spring — matching the reference's overshoot-free exponential decay. The
+  // offset takes the reference's 2.8em unless that would carry the opening
+  // glyphs past the safe margin, in which case it takes whatever room is left.
+  const roomToSpare = (1080 - lineWidth) / 2 - SAFE_MARGIN;
+  const slide = Math.min(SLIDE_EM * FONT_SIZE, Math.max(0, roomToSpare));
   const settle = spring({ frame, fps, config: UI_SPRING.move });
-  const tx = interpolate(settle, [0, 1], [-SLIDE_EM * FONT_SIZE, 0], CLAMP);
+  const tx = interpolate(settle, [0, 1], [-slide, 0], CLAMP);
 
   // ...and falls away as it is erased, on the same accelerating curve.
   const ty = interpolate(frame, [EXIT_START, EXIT_END], [0, FALL_EM * FONT_SIZE], {
