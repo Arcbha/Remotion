@@ -80,6 +80,25 @@ const SLIDE_EM = 2.8;
 const FALL_EM = 1.73;
 
 /**
+ * A slow sink through the hold, so the sentence is never actually frozen.
+ *
+ * The reference holds dead-still from its frame 36 to 74 — 633ms of
+ * pixel-identical frames — and only begins to drop at 74. That reads as a
+ * stall rather than a pause: the line arrives, stops absolutely, then falls.
+ * Spreading a gentle descent across the whole hold keeps something in motion
+ * the entire time and means the fall accelerates out of an existing drift
+ * instead of starting from a standstill. This is the one place the
+ * reconstruction departs from the reference's timing on purpose.
+ *
+ * The descent runs on `EASE.out`, not `EASE.inOut`: the stall the eye actually
+ * notices is the one the instant the sentence completes, and an ease-in-out
+ * leaves that first moment almost stationary. An ease-out moves immediately —
+ * continuing the deceleration the slide spring was already doing — and has all
+ * but settled by the time gravity takes over.
+ */
+const HOLD_SINK_EM = 0.18;
+
+/**
  * APPLE_MOTION.md §2 horizontal safe margin. The slide is clamped to it.
  *
  * The reframe cannot preserve both the reference's type proportion and its
@@ -98,7 +117,18 @@ const REVEAL_END = 36;
 const EXIT_START = 84;
 const EXIT_END = 122;
 
-export const PRISON_DURATION_FRAMES = EXIT_END;
+/**
+ * Black tail after the erase completes.
+ *
+ * The erase reaches 100% *at* frame 122, so a composition of 122 frames renders
+ * 0…121 and its final frame still carried 5.2% of the line — the tail of the
+ * closing "n", frozen mid-erase. The clip has to outlive the motion for the
+ * motion to finish on screen, and a beat of black gives the sentence somewhere
+ * to land instead of cutting on the last pixel.
+ */
+const TAIL_FRAMES = 60; // 1.0s
+
+export const PRISON_DURATION_FRAMES = EXIT_END + TAIL_FRAMES;
 
 /**
  * Resolves the display face, then measures the rendered line. The width is
@@ -156,11 +186,20 @@ export const PrisonNeedsIron: React.FC = () => {
   const settle = spring({ frame, fps, config: UI_SPRING.move });
   const tx = interpolate(settle, [0, 1], [-slide, 0], CLAMP);
 
-  // ...and falls away as it is erased, on the same accelerating curve.
-  const ty = interpolate(frame, [EXIT_START, EXIT_END], [0, FALL_EM * FONT_SIZE], {
+  // The line sinks imperceptibly through the hold, then the fall accelerates
+  // out of that drift rather than out of a dead stop. `CLAMP` holds the sink at
+  // its end value once the fall takes over, so the two simply sum.
+  const sink = interpolate(
+    frame,
+    [REVEAL_END, EXIT_START],
+    [0, HOLD_SINK_EM * FONT_SIZE],
+    { easing: EASE.out, ...CLAMP }
+  );
+  const fall = interpolate(frame, [EXIT_START, EXIT_END], [0, FALL_EM * FONT_SIZE], {
     easing: Easing.quad,
     ...CLAMP,
   });
+  const ty = sink + fall;
 
   return (
     <AbsoluteFill
@@ -184,7 +223,8 @@ export const PrisonNeedsIron: React.FC = () => {
           // The whole mechanic: a hard-edged window that opens left→right to
           // reveal, then closes left→right to erase.
           clipPath: `inset(0 ${((1 - reveal) * 100).toFixed(3)}% 0 ${(erase * 100).toFixed(3)}%)`,
-          willChange: "transform, clip-path",
+          // §14: never hold a compositor layer outside an active animation.
+          willChange: frame < EXIT_END ? "transform, clip-path" : undefined,
         }}
       >
         {TEXT}
